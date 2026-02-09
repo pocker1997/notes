@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+  <title>Admin — Invites</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link rel="stylesheet" href="/assets/css/admin.css" />
+</head>
+<body>
+  <div class="wrap">
+    <header class="topbar">
+      <div>
+        <div class="title">Admin</div>
+        <div class="subtitle" id="adminLabel">—</div>
+      </div>
+      <div class="actions">
+        <a class="btn ghost" href="/">Нотатки</a>
+        <button class="btn" id="logoutBtn">Вийти</button>
+      </div>
+    </header>
+
+    <main class="card">
+      <div class="row">
+        <div>
+          <h2>Інвайти</h2>
+          <p class="muted">Створюй інвайт-лінк і передавай користувачу. Інвайт лише показує welcome і веде на login.</p>
+        </div>
+
+        <button class="btn primary" id="createInviteBtn">Створити інвайт</button>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="row between">
+        <div class="muted" id="stats">—</div>
+        <button class="btn ghost" id="refreshBtn">Оновити</button>
+      </div>
+
+      <div class="tableWrap">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Code</th>
+              <th>Created</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="invitesTbody">
+            <tr><td colspan="4" class="muted">Завантаження…</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="toast" id="toast"></div>
+      <div class="error" id="error"></div>
+    </main>
+  </div>
+
+  <script src="/assets/js/supabaseClient.js"></script>
+  <script src="/assets/js/admin.js"></script>
+</body>
+</html>
