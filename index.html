@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Нотатки</title>
+  <meta name="description" content="Особисті нотатки з підтримкою завдань, питань та тредів" />
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <link rel="stylesheet" href="/assets/css/app.css" />
@@ -43,6 +44,12 @@
       </div>
 
       <div class="topbar-right">
+        <div id="streak-badge" class="streak-badge" style="display:none" aria-label="Streak">
+          <svg class="streak-flame" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+            <path d="M8 1C8 1 3 6.5 3 10a5 5 0 0 0 10 0C13 6.5 8 1 8 1Zm0 12.5A3 3 0 0 1 5 10c0-1.5 1.5-4 3-6 1.5 2 3 4.5 3 6a3 3 0 0 1-3 3.5Z" fill="currentColor"/>
+          </svg>
+          <span id="streak-count">0</span>
+        </div>
         <p class="topbar-email" id="userLabel"></p>
         <button id="logoutBtn" class="logout-icon-btn" aria-label="Вийти">
           <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -98,7 +105,114 @@
         <div id="thread-sheet-subtitle" class="thread-sheet-subtitle"></div>
       </div>
       <div id="thread-sheet-list" class="thread-sheet-list"></div>
+      <div class="thread-composer">
+        <div class="input-wrapper thread-composer-inner flex items-center gap-3 bg-white border border-gray-200 rounded-2xl px-4 py-2">
+          <label for="thread-note-input" class="sr-only">Додати нотатку в тред</label>
+          <input
+            id="thread-note-input"
+            type="text"
+            placeholder="Додати нотатку..."
+            autocomplete="off"
+            class="flex-1 outline-none text-[15px] text-gray-900 placeholder:text-gray-400 bg-transparent"
+          />
+          <button id="thread-send-btn" type="button" class="send-button thread-composer-send" disabled aria-label="Надіслати">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <line x1="12" y1="19" x2="12" y2="5"></line>
+              <polyline points="5 12 12 5 19 12"></polyline>
+            </svg>
+          </button>
+        </div>
+      </div>
       <button id="thread-sheet-close" class="thread-sheet-close" type="button">Закрити</button>
+    </div>
+  </div>
+
+  <!-- review modal -->
+  <div id="review-modal" class="review-modal" aria-hidden="true">
+    <div class="review-modal-bg"></div>
+
+    <!-- intro stats screen -->
+    <div id="review-intro" class="review-intro" role="dialog" aria-modal="true" aria-label="Ревізія минулого дня">
+      <div class="review-intro-content">
+        <div class="review-intro-title">Ревізія минулого дня</div>
+        <div class="review-intro-stats">
+          <div class="review-intro-stat">
+            <span class="review-intro-stat-num" id="review-intro-created">0</span>
+            <span class="review-intro-stat-label">створено задач</span>
+          </div>
+          <div class="review-intro-stat">
+            <span class="review-intro-stat-num" id="review-intro-completed">0</span>
+            <span class="review-intro-stat-label">виконано вчора</span>
+          </div>
+        </div>
+        <div id="review-intro-pending" class="review-intro-pending"></div>
+        <button id="review-start-btn" class="review-btn done review-intro-start" type="button">Почати ревізію</button>
+        <button id="review-intro-close-btn" class="review-btn close review-intro-dismiss" type="button">Не зараз</button>
+      </div>
+    </div>
+
+    <!-- swipe cards screen -->
+    <div id="review-swipe-screen" class="review-modal-content" style="display:none" role="dialog" aria-modal="true" aria-label="Ревізія задач">
+      <div class="review-header">
+        <div class="review-title">Ревізія минулого дня</div>
+        <div id="review-progress-text" class="review-progress">1 / 5</div>
+      </div>
+      <div id="review-card-area" class="review-card-area">
+        <div id="review-card" class="review-card">
+          <div id="review-card-label-left" class="review-card-label review-card-label-left">Пропустити</div>
+          <div id="review-card-label-right" class="review-card-label review-card-label-right">Виконано</div>
+          <div id="review-card-text" class="review-card-text"></div>
+          <div id="review-card-meta" class="review-card-meta"></div>
+        </div>
+      </div>
+      <div class="review-buttons">
+        <button id="review-skip-btn" class="review-btn skip" type="button" aria-label="Пропустити">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6L6 18"></path><path d="M6 6l12 12"></path></svg>
+          <span>Пропустити</span>
+        </button>
+        <button id="review-done-btn" class="review-btn done" type="button" aria-label="Виконано">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6L9 17l-5-5"></path></svg>
+          <span>Виконано</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- final summary -->
+    <div id="review-summary" class="review-summary" style="display:none">
+      <div class="review-summary-content">
+        <div class="review-summary-title">Ревізію завершено</div>
+        <div class="review-summary-stats">
+          <div class="review-stat done">
+            <span class="review-stat-num" id="review-stat-done">0</span>
+            <span class="review-stat-label">закрито</span>
+          </div>
+          <div class="review-stat skipped">
+            <span class="review-stat-num" id="review-stat-skipped">0</span>
+            <span class="review-stat-label">на потім</span>
+          </div>
+        </div>
+        <button id="review-close-btn" class="review-btn close" type="button">Готово</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- changelog modal -->
+  <div id="changelog-modal" class="changelog-modal" aria-hidden="true">
+    <div class="changelog-modal-bg"></div>
+    <div class="changelog-modal-panel" role="dialog" aria-modal="true" aria-label="Що нового">
+      <button id="changelog-close-btn" class="changelog-close" type="button" aria-label="Закрити">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M18 6L6 18"></path><path d="M6 6l12 12"></path>
+        </svg>
+      </button>
+      <div class="changelog-header">Що нового</div>
+      <ul class="changelog-list">
+        <li><strong>Ревізія минулого дня</strong> — щоранку о 8:00 перевіряй незакриті задачі свайпами, як у Tinder</li>
+        <li><strong>Стрік активності</strong> — лічильник днів поспіль з конфеті на milestone</li>
+        <li><strong>Назва треду</strong> — тепер тред можна назвати, назва видна у фіді</li>
+        <li><strong>Нотатки в треді</strong> — додавай записи прямо всередині треду</li>
+        <li><strong>Оновлений UI</strong> — єдиний акцент, чистіші тіні, підтримка reduced motion</li>
+      </ul>
     </div>
   </div>
 

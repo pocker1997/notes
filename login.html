@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Login</title>
+  <meta name="description" content="Вхід до персональних нотаток" />
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <link rel="stylesheet" href="/assets/css/login.css" />
 </head>
@@ -12,11 +13,13 @@
     <h1>Вхід</h1>
     <p class="subtitle">Введи свою пошту та пароль</p>
 
+    <label for="email" class="sr-only">Email</label>
     <input id="email" type="email" placeholder="Email" />
+    <label for="password" class="sr-only">Password</label>
     <input id="password" type="password" placeholder="Password" />
 
     <button id="loginBtn">Увійти</button>
-    <div class="error" id="error"></div>
+    <div class="error" id="error" role="alert" aria-live="assertive"></div>
 
     <div class="hint">
       Якщо в тебе є інвайт — відкрий інвайт-лінк, а потім залогінься.

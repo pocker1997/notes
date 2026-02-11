@@ -32,14 +32,567 @@
   const threadSheetTitle = document.getElementById('thread-sheet-title');
   const threadSheetSubtitle = document.getElementById('thread-sheet-subtitle');
   const threadSheetClose = document.getElementById('thread-sheet-close');
+  const threadNoteInput = document.getElementById('thread-note-input');
+  const threadSendBtn = document.getElementById('thread-send-btn');
 
   userLabel.textContent = user.email || user.id;
 
   const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
+  // === streak ===
+  const streakBadge = document.getElementById('streak-badge');
+  const streakCountEl = document.getElementById('streak-count');
+  const STREAK_MILESTONES = [3, 7, 14, 30, 60, 100];
+
+  function todayKey() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+
+  function prevDay(dateStr) {
+    const d = new Date(dateStr + 'T12:00:00');
+    d.setDate(d.getDate() - 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+
+  function computeStreak(notes) {
+    const days = new Set();
+    for (const n of notes) {
+      if (n.date) {
+        const raw = (n.date ?? '').toString();
+        const m = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+        if (m) days.add(m[1]);
+      }
+    }
+    const today = todayKey();
+    let cursor = days.has(today) ? today : prevDay(today);
+    let count = 0;
+    while (days.has(cursor)) {
+      count++;
+      cursor = prevDay(cursor);
+    }
+    return count;
+  }
+
+  function updateStreakBadge(streak) {
+    if (streak > 0 && streakBadge) {
+      streakBadge.style.display = '';
+      streakCountEl.textContent = streak;
+    } else if (streakBadge) {
+      streakBadge.style.display = 'none';
+    }
+  }
+
+  function fireCelebration() {
+    if (reduceMotion) return;
+    const overlay = document.createElement('div');
+    overlay.className = 'streak-celebration';
+    const colors = ['#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#ec4899'];
+    const count = 40;
+    for (let i = 0; i < count; i++) {
+      const p = document.createElement('div');
+      p.className = 'streak-particle';
+      const size = 5 + Math.random() * 7;
+      const dur = 3000 + Math.random() * 2000;
+      const delay = Math.random() * 1500;
+      const startX = Math.random() * 100;
+      const sway = (Math.random() - 0.5) * 60;
+      const swayEnd = sway + (Math.random() - 0.5) * 40;
+      p.style.width = size + 'px';
+      p.style.height = size + 'px';
+      p.style.left = startX + '%';
+      p.style.top = '0px';
+      p.style.background = colors[i % colors.length];
+      p.style.setProperty('--ty-start', '-20px');
+      p.style.setProperty('--ty-end', (window.innerHeight + 40) + 'px');
+      p.style.setProperty('--sway', sway + 'px');
+      p.style.setProperty('--sway-end', swayEnd + 'px');
+      p.style.setProperty('--dur', dur + 'ms');
+      p.style.setProperty('--delay', delay + 'ms');
+      overlay.appendChild(p);
+    }
+    document.body.appendChild(overlay);
+    setTimeout(() => overlay.remove(), 5500);
+  }
+
+  function checkStreakCelebration(streak) {
+    if (!STREAK_MILESTONES.includes(streak)) return;
+    const key = `streak_celebrated_${todayKey()}_${streak}`;
+    if (localStorage.getItem(key)) return;
+    localStorage.setItem(key, '1');
+    fireCelebration();
+  }
+
+  window.__debugStreak = {
+    celebrate: () => fireCelebration(),
+    setStreak: (n) => updateStreakBadge(n)
+  };
+
+  // === changelog / what's new ===
+  const CHANGELOG_VERSION = 'v2';
+  const changelogModal = document.getElementById('changelog-modal');
+  const changelogCloseBtn = document.getElementById('changelog-close-btn');
+
+  function isChangelogSeen() {
+    return !!localStorage.getItem(`changelog_seen_${CHANGELOG_VERSION}`);
+  }
+
+  function markChangelogSeen() {
+    localStorage.setItem(`changelog_seen_${CHANGELOG_VERSION}`, '1');
+  }
+
+  function openChangelog() {
+    changelogModal.classList.add('is-open');
+    changelogModal.setAttribute('aria-hidden', 'false');
+    fireCelebration();
+  }
+
+  function closeChangelog() {
+    changelogModal.classList.remove('is-open');
+    changelogModal.setAttribute('aria-hidden', 'true');
+    markChangelogSeen();
+  }
+
+  changelogCloseBtn?.addEventListener('click', closeChangelog);
+  changelogModal?.querySelector('.changelog-modal-bg')?.addEventListener('click', closeChangelog);
+
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && changelogModal?.classList.contains('is-open')) {
+      closeChangelog();
+    }
+  });
+
+  window.__debugChangelog = {
+    open: () => openChangelog(),
+    reset: () => { localStorage.removeItem(`changelog_seen_${CHANGELOG_VERSION}`); location.reload(); }
+  };
+
+  // === daily review ===
+  const reviewModal = document.getElementById('review-modal');
+  const reviewIntro = document.getElementById('review-intro');
+  const reviewIntroCreated = document.getElementById('review-intro-created');
+  const reviewIntroCompleted = document.getElementById('review-intro-completed');
+  const reviewIntroPending = document.getElementById('review-intro-pending');
+  const reviewStartBtn = document.getElementById('review-start-btn');
+  const reviewIntroCloseBtn = document.getElementById('review-intro-close-btn');
+  const reviewSwipeScreen = document.getElementById('review-swipe-screen');
+  const reviewCardArea = document.getElementById('review-card-area');
+  const reviewCard = document.getElementById('review-card');
+  const reviewCardText = document.getElementById('review-card-text');
+  const reviewCardMeta = document.getElementById('review-card-meta');
+  const reviewCardLabelLeft = document.getElementById('review-card-label-left');
+  const reviewCardLabelRight = document.getElementById('review-card-label-right');
+  const reviewProgressText = document.getElementById('review-progress-text');
+  const reviewSkipBtn = document.getElementById('review-skip-btn');
+  const reviewDoneBtn = document.getElementById('review-done-btn');
+  const reviewSummary = document.getElementById('review-summary');
+  const reviewStatDone = document.getElementById('review-stat-done');
+  const reviewStatSkipped = document.getElementById('review-stat-skipped');
+  const reviewCloseBtn = document.getElementById('review-close-btn');
+
+  let reviewTasks = [];
+  let reviewIndex = 0;
+  let reviewDoneCount = 0;
+  let reviewSkippedCount = 0;
+  let reviewSwiping = false;
+  let reviewTimerInterval = null;
+  let reviewForceShow = false;
+  let reviewHintInterval = null;
+
+  function getReviewCutoff() {
+    // cutoff = today at 8:00 AM local time
+    const now = new Date();
+    const cutoff = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 8, 0, 0, 0);
+    return cutoff;
+  }
+
+  function getReviewTasks(notes) {
+    const cutoff = getReviewCutoff();
+    return notes.filter(n => {
+      if (!n.is_task || n.completed || isThreadNote(n)) return false;
+      const d = new Date(n.date);
+      return d < cutoff;
+    });
+  }
+
+  function isReviewDone() {
+    return !!localStorage.getItem(`review_done_${todayKey()}`);
+  }
+
+  function markReviewDone() {
+    localStorage.setItem(`review_done_${todayKey()}`, '1');
+  }
+
+  function renderReviewBanner() {
+    const tasks = getReviewTasks(currentNotes);
+    const done = isReviewDone();
+
+    // no tasks and not done → no banner
+    if (!tasks.length && !done) return null;
+
+    // only show after 8:00 AM (unless forced via debug)
+    if (!reviewForceShow && new Date().getHours() < 8) return null;
+
+    const banner = document.createElement('button');
+    banner.type = 'button';
+    banner.className = 'review-banner';
+
+    if (!done && tasks.length) {
+      banner.innerHTML = `
+        <div class="review-banner-icon">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M9 11l3 3L22 4"></path>
+            <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
+          </svg>
+        </div>
+        <div class="review-banner-body">
+          <div class="review-banner-title">Ревізія минулого дня</div>
+          <div class="review-banner-sub">${tasks.length} ${tasks.length === 1 ? 'задача' : tasks.length < 5 ? 'задачі' : 'задач'} чекають</div>
+        </div>
+        <div class="review-banner-arrow">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M9 18l6-6-6-6"></path>
+          </svg>
+        </div>
+      `;
+      banner.addEventListener('click', () => openReviewModal());
+    } else {
+      // done — show timer
+      banner.innerHTML = `
+        <div class="review-banner-icon">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="10"></circle>
+            <path d="M12 6v6l4 2"></path>
+          </svg>
+        </div>
+        <div class="review-banner-body">
+          <div class="review-banner-title">Ревізія пройдена</div>
+          <div class="review-banner-sub">Наступна через: <span id="review-timer">--:--:--</span></div>
+        </div>
+      `;
+      banner.style.cursor = 'default';
+      startReviewTimer();
+    }
+
+    return banner;
+  }
+
+  function startReviewTimer() {
+    if (reviewTimerInterval) clearInterval(reviewTimerInterval);
+    function tick() {
+      const timerEl = document.getElementById('review-timer');
+      if (!timerEl) { clearInterval(reviewTimerInterval); return; }
+      const now = new Date();
+      const target = new Date(now);
+      target.setDate(target.getDate() + 1);
+      target.setHours(8, 0, 0, 0);
+      const diff = Math.max(0, target - now);
+      const h = String(Math.floor(diff / 3600000)).padStart(2, '0');
+      const m = String(Math.floor((diff % 3600000) / 60000)).padStart(2, '0');
+      const s = String(Math.floor((diff % 60000) / 1000)).padStart(2, '0');
+      timerEl.textContent = `${h}:${m}:${s}`;
+    }
+    tick();
+    reviewTimerInterval = setInterval(tick, 1000);
+  }
+
+  function getYesterdayStats(notes) {
+    const yesterday = prevDay(todayKey());
+    let created = 0;
+    let completed = 0;
+    for (const n of notes) {
+      if (!n.is_task || isThreadNote(n)) continue;
+      const dk = dayKey(n.date);
+      if (dk === yesterday) {
+        created++;
+        if (n.completed) completed++;
+      }
+    }
+    return { created, completed };
+  }
+
+  function openReviewModal(forceTasks) {
+    const tasks = forceTasks || getReviewTasks(currentNotes);
+    if (!tasks.length) return;
+
+    reviewTasks = tasks;
+    reviewIndex = 0;
+    reviewDoneCount = 0;
+    reviewSkippedCount = 0;
+    reviewSwiping = false;
+
+    // hide all inner screens
+    reviewIntro.style.display = '';
+    reviewSwipeScreen.style.display = 'none';
+    reviewSummary.style.display = 'none';
+
+    // fill intro stats
+    const stats = getYesterdayStats(forceTasks ? [] : currentNotes);
+    animateCounter(reviewIntroCreated, stats.created, 500);
+    animateCounter(reviewIntroCompleted, stats.completed, 500);
+
+    const pendingCount = tasks.length;
+    const pendingWord = pendingCount === 1 ? 'задача' : pendingCount < 5 ? 'задачі' : 'задач';
+    reviewIntroPending.textContent = `Є ще ${pendingCount} ${pendingWord}, які треба перевірити`;
+
+    // open modal
+    reviewModal.classList.add('is-open');
+    reviewModal.setAttribute('aria-hidden', 'false');
+    document.body.style.overflow = 'hidden';
+  }
+
+  function startReviewSwipe() {
+    reviewIntro.style.display = 'none';
+    reviewSwipeScreen.style.display = '';
+    showReviewCard(0, true);
+  }
+
+  function closeReviewModal(allReviewed) {
+    reviewModal.classList.remove('is-open');
+    reviewModal.setAttribute('aria-hidden', 'true');
+    document.body.style.overflow = '';
+    stopReviewHint();
+    if (allReviewed) {
+      markReviewDone();
+    }
+    loadNotes();
+  }
+
+  function stopReviewHint() {
+    if (reviewHintInterval) {
+      clearInterval(reviewHintInterval);
+      reviewHintInterval = null;
+    }
+    reviewCard?.classList.remove('onboarding-hint');
+  }
+
+  function startReviewHintLoop() {
+    stopReviewHint();
+    if (reduceMotion) return;
+
+    function playHint() {
+      reviewCard.classList.remove('onboarding-hint');
+      // force reflow so animation re-triggers
+      void reviewCard.offsetWidth;
+      reviewCard.classList.add('onboarding-hint');
+    }
+
+    // play immediately on first card
+    playHint();
+
+    // repeat every 5s
+    reviewHintInterval = setInterval(playHint, 5000);
+  }
+
+  function showReviewCard(index, isFirst) {
+    if (index >= reviewTasks.length) {
+      showReviewSummary();
+      return;
+    }
+
+    const task = reviewTasks[index];
+    const taskInfo = parseTask(task.text);
+    reviewCardText.textContent = taskInfo.displayText;
+    reviewCardMeta.textContent = fmtDay(task.date) + ' · ' + fmtTime(task.date);
+    reviewProgressText.textContent = `${index + 1} / ${reviewTasks.length}`;
+
+    // reset card state
+    reviewCard.className = 'review-card';
+    reviewCard.style.transform = '';
+    reviewCardLabelLeft.style.opacity = '0';
+    reviewCardLabelRight.style.opacity = '0';
+
+    if (isFirst) {
+      startReviewHintLoop();
+    }
+  }
+
+  async function onReviewSwipe(direction) {
+    if (reviewSwiping) return;
+    reviewSwiping = true;
+
+    const task = reviewTasks[reviewIndex];
+
+    if (direction === 'right') {
+      reviewDoneCount++;
+      await toggleTaskCompleted(task.id, true);
+      reviewCard.classList.add('exit-right');
+    } else {
+      reviewSkippedCount++;
+      reviewCard.classList.add('exit-left');
+    }
+
+    const onDone = () => {
+      reviewIndex++;
+      reviewSwiping = false;
+      showReviewCard(reviewIndex, false);
+    };
+
+    if (reduceMotion) {
+      onDone();
+    } else {
+      reviewCard.addEventListener('animationend', onDone, { once: true });
+    }
+  }
+
+  function showReviewSummary() {
+    reviewSwipeScreen.style.display = 'none';
+    reviewSummary.style.display = '';
+    stopReviewHint();
+
+    // animate numbers counting up
+    animateCounter(reviewStatDone, reviewDoneCount, 600);
+    animateCounter(reviewStatSkipped, reviewSkippedCount, 600);
+
+    fireCelebration();
+  }
+
+  function animateCounter(el, target, durationMs) {
+    if (target === 0 || reduceMotion) {
+      el.textContent = target;
+      return;
+    }
+    const start = performance.now();
+    function step(now) {
+      const t = Math.min((now - start) / durationMs, 1);
+      const eased = 1 - Math.pow(1 - t, 3); // ease-out cubic
+      el.textContent = Math.round(eased * target);
+      if (t < 1) requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+  }
+
+  // swipe gesture
+  let swipeStartX = 0;
+  let swipeStartY = 0;
+  let swipeActive = false;
+  const SWIPE_THRESHOLD = 80;
+
+  reviewCardArea?.addEventListener('pointerdown', (e) => {
+    if (reviewSwiping) return;
+    swipeStartX = e.clientX;
+    swipeStartY = e.clientY;
+    swipeActive = true;
+    stopReviewHint();
+    reviewCard.classList.add('is-dragging');
+    reviewCardArea.setPointerCapture(e.pointerId);
+  });
+
+  reviewCardArea?.addEventListener('pointermove', (e) => {
+    if (!swipeActive || reviewSwiping) return;
+    const dx = e.clientX - swipeStartX;
+    const dy = e.clientY - swipeStartY;
+
+    // if mostly vertical, ignore
+    if (Math.abs(dy) > Math.abs(dx) * 1.5 && Math.abs(dx) < 20) return;
+
+    const rotation = Math.max(-12, Math.min(12, dx * 0.08));
+    reviewCard.style.transform = `translateX(${dx}px) rotate(${rotation}deg)`;
+
+    const progress = Math.min(Math.abs(dx) / SWIPE_THRESHOLD, 1);
+    if (dx > 0) {
+      reviewCardLabelRight.style.opacity = String(progress);
+      reviewCardLabelLeft.style.opacity = '0';
+    } else {
+      reviewCardLabelLeft.style.opacity = String(progress);
+      reviewCardLabelRight.style.opacity = '0';
+    }
+  });
+
+  reviewCardArea?.addEventListener('pointerup', (e) => {
+    if (!swipeActive) return;
+    swipeActive = false;
+    reviewCard.classList.remove('is-dragging');
+
+    const dx = e.clientX - swipeStartX;
+    if (Math.abs(dx) >= SWIPE_THRESHOLD) {
+      onReviewSwipe(dx > 0 ? 'right' : 'left');
+    } else {
+      // snap back
+      reviewCard.style.transform = '';
+      reviewCardLabelLeft.style.opacity = '0';
+      reviewCardLabelRight.style.opacity = '0';
+    }
+  });
+
+  reviewCardArea?.addEventListener('pointercancel', () => {
+    swipeActive = false;
+    reviewCard.classList.remove('is-dragging');
+    reviewCard.style.transform = '';
+    reviewCardLabelLeft.style.opacity = '0';
+    reviewCardLabelRight.style.opacity = '0';
+  });
+
+  // button listeners
+  reviewStartBtn?.addEventListener('click', startReviewSwipe);
+  reviewIntroCloseBtn?.addEventListener('click', () => closeReviewModal(false));
+  reviewSkipBtn?.addEventListener('click', () => { stopReviewHint(); onReviewSwipe('left'); });
+  reviewDoneBtn?.addEventListener('click', () => { stopReviewHint(); onReviewSwipe('right'); });
+  reviewCloseBtn?.addEventListener('click', () => closeReviewModal(true));
+
+  // Escape closes review modal — early close = not done
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && reviewModal.classList.contains('is-open')) {
+      e.preventDefault();
+      e.stopPropagation();
+      // if we're on the summary screen, it means all tasks were reviewed
+      const onSummary = reviewSummary.style.display !== 'none';
+      closeReviewModal(onSummary);
+    }
+  }, true);
+
+  function _fakeReviewTasks() {
+    const yesterday = prevDay(todayKey());
+    return [
+      { id: 'fake1', text: '[] Купити молоко', date: yesterday + 'T10:00:00Z', is_task: true, completed: false },
+      { id: 'fake2', text: '[] Зробити код-рев\'ю', date: yesterday + 'T14:30:00Z', is_task: true, completed: false },
+      { id: 'fake3', text: 'Завдання: написати тести', date: yesterday + 'T16:00:00Z', is_task: true, completed: false },
+      { id: 'fake4', text: '[] Відповісти на лист', date: yesterday + 'T09:15:00Z', is_task: true, completed: false },
+      { id: 'fake5', text: '[] Оновити залежності', date: yesterday + 'T11:45:00Z', is_task: true, completed: false },
+    ];
+  }
+
+  window.__debugReview = {
+    open: () => {
+      // force open with fake tasks if none exist
+      const tasks = getReviewTasks(currentNotes);
+      if (tasks.length) {
+        openReviewModal(tasks);
+      } else {
+        openReviewModal(_fakeReviewTasks());
+      }
+    },
+    reset: () => {
+      localStorage.removeItem(`review_done_${todayKey()}`);
+      location.reload();
+    },
+    banner: () => {
+      // inject fake yesterday tasks + completed ones for stats
+      const yesterday = prevDay(todayKey());
+      const fakes = _fakeReviewTasks();
+      const completedFakes = [
+        { id: 'fakeDone1', text: '[] Прочитати статтю', date: yesterday + 'T08:00:00Z', is_task: true, completed: true },
+        { id: 'fakeDone2', text: '[] Зробити каву', date: yesterday + 'T07:30:00Z', is_task: true, completed: true },
+      ];
+      localStorage.removeItem(`review_done_${todayKey()}`);
+      currentNotes.push(...fakes, ...completedFakes);
+      // re-sort so fakes appear in correct chronological order
+      currentNotes.sort((a, b) => {
+        const ka = sortableDateKey(a.date);
+        const kb = sortableDateKey(b.date);
+        if (ka !== kb) return ka.localeCompare(kb);
+        return String(a.id).localeCompare(String(b.id));
+      });
+      reviewForceShow = true;
+      renderCurrentView();
+      reviewForceShow = false;
+    }
+  };
+
   // === timings (CSS uses --hold-ms) ===
-  const HOLD_MS = 2000; // змінюй тут — і прогрес, і “білий шар” іконки будуть синхронні
-  document.documentElement.style.setProperty('--hold-ms', `${HOLD_MS}ms`);
+  const HOLD_MS_SINGLE = 1000;
+  const HOLD_MS_MULTI = 2000;
+  document.documentElement.style.setProperty('--hold-ms', `${HOLD_MS_MULTI}ms`);
 
   // === formatting ===
   const fmtTime = (iso) => new Date(iso).toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' });
@@ -447,12 +1000,14 @@
     }
   }
 
-  function attachHoldAction(btn, onCommit) {
+  function attachHoldAction(btn, onCommit, holdMs) {
+    const duration = holdMs || HOLD_MS_MULTI;
     let timer = null;
     let active = false;
 
     const resetVisual = () => {
       btn.classList.remove('is-holding');
+      btn.style.removeProperty('--hold-ms');
       btn.classList.add('is-cancel');
       window.setTimeout(() => btn.classList.remove('is-cancel'), reduceMotion ? 0 : 140);
     };
@@ -473,6 +1028,7 @@
 
       active = true;
       btn.classList.remove('is-cancel');
+      btn.style.setProperty('--hold-ms', `${duration}ms`);
       btn.classList.add('is-holding');
 
       timer = window.setTimeout(async () => {
@@ -481,7 +1037,7 @@
         timer = null;
         await onCommit();
         resetVisual();
-      }, HOLD_MS);
+      }, duration);
     });
 
     btn.addEventListener('pointerup', cancel);
@@ -516,7 +1072,7 @@
     attachHoldAction(btn, async () => {
       if (editingNoteId || multiSelectMode) return;
       await commit();
-    });
+    }, HOLD_MS_SINGLE);
   }
 
   // ==========================
@@ -616,6 +1172,14 @@
   function closeThreadSheet() {
     openedThreadNoteId = null;
     editingThreadItemIndex = null;
+
+    // restore title element if it was replaced by edit input
+    const head = document.querySelector('.thread-sheet-head');
+    if (head && !head.contains(threadSheetTitle)) {
+      const editInput = head.querySelector('.thread-sheet-title-input');
+      if (editInput) head.replaceChild(threadSheetTitle, editInput);
+    }
+
     threadSheet.classList.remove('is-open');
     threadSheet.setAttribute('aria-hidden', 'true');
     document.body.classList.remove('thread-sheet-open');
@@ -672,10 +1236,82 @@
     return { note: currentNotes[noteIdx], payload: nextPayload };
   }
 
+  async function updateThreadTitle(noteId, newTitle) {
+    const noteIdx = currentNotes.findIndex((n) => n.id === noteId);
+    if (noteIdx < 0) return null;
+
+    const note = currentNotes[noteIdx];
+    const payload = parseThreadPayload(note);
+    if (!payload) return null;
+
+    const nextPayload = { ...payload, title: newTitle || undefined };
+    if (!newTitle) delete nextPayload.title;
+
+    const serialized = JSON.stringify(nextPayload);
+    const { error } = await sb
+      .from('notes')
+      .update({ answer: serialized })
+      .eq('id', noteId)
+      .eq('user_id', user.id);
+
+    if (error) {
+      alert('Не вдалось оновити назву: ' + error.message);
+      return null;
+    }
+
+    currentNotes[noteIdx].answer = serialized;
+    return { note: currentNotes[noteIdx], payload: nextPayload };
+  }
+
+  function startEditThreadTitle(note, payload) {
+    const currentTitle = payload.title || '';
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'thread-sheet-title-input';
+    input.value = currentTitle;
+    input.placeholder = 'Назва треду...';
+
+    const head = threadSheetTitle.parentNode;
+    head.replaceChild(input, threadSheetTitle);
+    input.focus();
+    input.select();
+
+    let saved = false;
+    async function finish(save) {
+      if (saved) return;
+      saved = true;
+      const val = input.value.trim();
+
+      if (save && val !== currentTitle) {
+        const result = await updateThreadTitle(note.id, val);
+        if (result) {
+          head.replaceChild(threadSheetTitle, input);
+          threadSheetTitle.textContent = val || 'Тред';
+          // re-render feed to update preview
+          renderCurrentView({ preserveScroll: true });
+          return;
+        }
+      }
+
+      head.replaceChild(threadSheetTitle, input);
+      threadSheetTitle.textContent = currentTitle || 'Тред';
+    }
+
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+      if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+    });
+    input.addEventListener('blur', () => finish(true));
+  }
+
   function renderThreadSheetFeed(note, payload) {
     const items = safeThreadItems(payload);
-    threadSheetTitle.textContent = 'Тред';
-    threadSheetSubtitle.textContent = `${items.length} повідомлень`;
+    threadSheetTitle.textContent = payload.title || 'Тред';
+    const msgWord = items.length === 1 ? 'повідомлення' : items.length < 5 ? 'повідомлення' : 'повідомлень';
+    threadSheetSubtitle.textContent = `${items.length} ${msgWord}`;
+
+    // click on title → edit
+    threadSheetTitle.onclick = () => startEditThreadTitle(note, payload);
     threadSheetList.innerHTML = '';
 
     if (!items.length) {
@@ -868,7 +1504,7 @@
             }
             renderCurrentView({ preserveScroll: true });
             renderThreadSheetFeed(changed.note, changed.payload);
-          });
+          }, HOLD_MS_SINGLE);
         }
       }
 
@@ -956,12 +1592,15 @@
   }
 
   function openThreadSheet(note, payload) {
-    const items = safeThreadItems(payload);
-    if (!items.length) return;
-
     openedThreadNoteId = note.id;
     editingThreadItemIndex = null;
     renderThreadSheetFeed(note, payload);
+
+    // reset thread composer
+    if (threadNoteInput) {
+      threadNoteInput.value = '';
+      threadSendBtn.disabled = true;
+    }
 
     threadSheet.classList.add('is-open');
     threadSheet.setAttribute('aria-hidden', 'false');
@@ -1203,17 +1842,29 @@
 
     mountEl.innerHTML = '';
 
+    // prepare review banner (only in main feed view)
+    const reviewBannerEl = (mountEl === notesContainer && viewMode === 'feed')
+      ? renderReviewBanner()
+      : null;
+    let reviewBannerInserted = false;
+
     if (!displayNotes.length) {
-      mountEl.innerHTML = `
-        <div class="empty-state">
-          <div class="empty-text">Поки що нотаток немає.</div>
-          <div class="empty-hint">Напиши першу нотатку нижче.</div>
-        </div>
-      `;
+      // no notes — still show review banner if exists
+      if (reviewBannerEl) {
+        mountEl.appendChild(reviewBannerEl);
+      } else {
+        mountEl.innerHTML = `
+          <div class="empty-state">
+            <div class="empty-text">Поки що нотаток немає.</div>
+            <div class="empty-hint">Напиши першу нотатку нижче.</div>
+          </div>
+        `;
+      }
       return;
     }
 
     let prevDay = null;
+    const today = todayKey();
 
     displayNotes.forEach((n) => {
       const curDay = dayKey(n.date);
@@ -1227,6 +1878,13 @@
           <div class="day-sep-line"></div>
         `;
         mountEl.appendChild(sep);
+
+        // insert review banner right after today's day separator
+        if (!reviewBannerInserted && reviewBannerEl && curDay === today) {
+          mountEl.appendChild(reviewBannerEl);
+          reviewBannerInserted = true;
+        }
+
         prevDay = curDay;
       }
 
@@ -1335,7 +1993,8 @@
       if (isThread) {
         row.classList.add('is-thread-note');
         const items = safeThreadItems(threadPayload);
-        const preview = (items[items.length - 1]?.text || '').replace(/\s+/g, ' ').trim();
+        const threadTitle = threadPayload.title || '';
+        const lastText = (items[items.length - 1]?.text || '').replace(/\s+/g, ' ').trim();
 
         const stack = document.createElement('div');
         stack.className = 'thread-stack';
@@ -1351,7 +2010,12 @@
 
         const previewEl = document.createElement('div');
         previewEl.className = 'thread-preview';
-        previewEl.textContent = preview || 'Відкрий тред, щоб подивитись повідомлення';
+        if (threadTitle) {
+          previewEl.classList.add('has-title');
+          previewEl.textContent = threadTitle;
+        } else {
+          previewEl.textContent = lastText || 'Відкрий тред, щоб подивитись повідомлення';
+        }
 
         topCard.appendChild(previewEl);
         topCard.appendChild(countPill);
@@ -1594,6 +2258,11 @@
       }
     });
 
+    // fallback: if no notes today, prepend banner at top
+    if (reviewBannerEl && !reviewBannerInserted) {
+      mountEl.prepend(reviewBannerEl);
+    }
+
     if (preserveScroll) {
       scrollEl.scrollTop = prevScrollTop;
     } else {
@@ -1710,6 +2379,10 @@
 
     lastInsertedId = data?.id ?? null;
     await loadNotes();
+
+    const streak = computeStreak(currentNotes);
+    updateStreakBadge(streak);
+    checkStreakCelebration(streak);
   }
 
   // ==========
@@ -1768,6 +2441,54 @@
   threadSheetOverlay.addEventListener('click', closeThreadSheet);
   threadSheetClose.addEventListener('click', closeThreadSheet);
 
+  // thread composer
+  threadNoteInput?.addEventListener('input', () => {
+    threadSendBtn.disabled = threadNoteInput.value.trim().length === 0;
+  });
+
+  threadNoteInput?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      submitThreadNote();
+    }
+  });
+
+  threadSendBtn?.addEventListener('click', submitThreadNote);
+
+  async function submitThreadNote() {
+    const text = threadNoteInput.value.trim();
+    if (!text || !openedThreadNoteId) return;
+
+    threadNoteInput.disabled = true;
+    threadSendBtn.disabled = true;
+
+    const taskInfo = parseTask(text);
+
+    const result = await mutateOpenedThreadPayload((items) => {
+      items.push({
+        id: null,
+        text,
+        date: new Date().toISOString(),
+        is_task: !!taskInfo.isTask,
+        completed: false,
+        is_question: isQuestionText(text),
+        answer: null
+      });
+      return items;
+    });
+
+    threadNoteInput.disabled = false;
+    threadNoteInput.value = '';
+    threadSendBtn.disabled = true;
+    threadNoteInput.focus();
+
+    if (result) {
+      renderThreadSheetFeed(result.note, result.payload);
+      // scroll to bottom of thread list
+      threadSheetList.scrollTop = threadSheetList.scrollHeight;
+    }
+  }
+
   window.addEventListener('resize', syncComposerOffset, { passive: true });
 
   logoutBtn.addEventListener('click', async () => {
@@ -1780,4 +2501,10 @@
   updateComposerVisibility();
   updateMultiActionState();
   await loadNotes();
+  updateStreakBadge(computeStreak(currentNotes));
+
+  // show changelog on first visit after deploy
+  if (!isChangelogSeen()) {
+    setTimeout(() => openChangelog(), 600);
+  }
 })();
