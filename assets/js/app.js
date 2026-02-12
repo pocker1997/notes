@@ -2258,9 +2258,20 @@
       }
     });
 
-    // fallback: if no notes today, prepend banner at top
+    // fallback: if no notes for today, append banner at the end (feed is ascending)
     if (reviewBannerEl && !reviewBannerInserted) {
-      mountEl.prepend(reviewBannerEl);
+      // add today's day separator if it wasn't created by the loop
+      if (prevDay !== today) {
+        const sep = document.createElement('div');
+        sep.className = 'day-sep';
+        sep.innerHTML = `
+          <div class="day-sep-line"></div>
+          <div class="day-sep-label">${fmtDay(new Date().toISOString())}</div>
+          <div class="day-sep-line"></div>
+        `;
+        mountEl.appendChild(sep);
+      }
+      mountEl.appendChild(reviewBannerEl);
     }
 
     if (preserveScroll) {
