@@ -31,7 +31,6 @@
   const threadSheetList = document.getElementById('thread-sheet-list');
   const threadSheetTitle = document.getElementById('thread-sheet-title');
   const threadSheetSubtitle = document.getElementById('thread-sheet-subtitle');
-  const threadSheetClose = document.getElementById('thread-sheet-close');
   const threadNoteInput = document.getElementById('thread-note-input');
   const threadSendBtn = document.getElementById('thread-send-btn');
 
@@ -219,8 +218,41 @@
     return !!localStorage.getItem(`review_done_${todayKey()}`);
   }
 
-  function markReviewDone() {
-    localStorage.setItem(`review_done_${todayKey()}`, '1');
+  async function markReviewDone() {
+    const key = todayKey();
+    localStorage.setItem(`review_done_${key}`, '1');
+
+    // persist to Supabase so it syncs across devices
+    // first check if marker already exists to avoid duplicates
+    const { data: existing } = await sb
+      .from('notes')
+      .select('id')
+      .eq('user_id', user.id)
+      .eq('text', `${REVIEW_MARKER}${key}`)
+      .maybeSingle();
+
+    if (!existing) {
+      await sb
+        .from('notes')
+        .insert({
+          user_id: user.id,
+          text: `${REVIEW_MARKER}${key}`,
+          date: new Date().toISOString(),
+          is_task: false,
+          completed: false,
+          is_question: false,
+          answer: null
+        });
+    }
+  }
+
+  /** Sync review markers from Supabase into localStorage (called during loadNotes) */
+  function syncReviewMarkers(rawNotes) {
+    for (const n of rawNotes) {
+      if (!isReviewMarkerNote(n)) continue;
+      const dateStr = n.text.replace(REVIEW_MARKER, '');
+      if (dateStr) localStorage.setItem(`review_done_${dateStr}`, '1');
+    }
   }
 
   function renderReviewBanner() {
@@ -347,13 +379,13 @@
     showReviewCard(0, true);
   }
 
-  function closeReviewModal(allReviewed) {
+  async function closeReviewModal(allReviewed) {
     reviewModal.classList.remove('is-open');
     reviewModal.setAttribute('aria-hidden', 'true');
     document.body.style.overflow = '';
     stopReviewHint();
     if (allReviewed) {
-      markReviewDone();
+      await markReviewDone();
     }
     loadNotes();
   }
@@ -562,8 +594,13 @@
         openReviewModal(_fakeReviewTasks());
       }
     },
-    reset: () => {
-      localStorage.removeItem(`review_done_${todayKey()}`);
+    reset: async () => {
+      const key = todayKey();
+      localStorage.removeItem(`review_done_${key}`);
+      // also remove Supabase marker
+      await sb.from('notes').delete()
+        .eq('user_id', user.id)
+        .eq('text', `${REVIEW_MARKER}${key}`);
       location.reload();
     },
     banner: () => {
@@ -635,6 +672,99 @@
   let activeFolderType = null;
 
   const THREAD_MARKER = '__thread_v1__';
+  const REVIEW_MARKER = '__review_done__';
+
+  // === Related notes (keyword matching) ===
+  const RELATED_STOP_WORDS = new Set([
+    'і', 'та', 'що', 'як', 'це', 'але', 'для', 'від', 'до', 'не',
+    'у', 'в', 'на', 'з', 'по', 'чи', 'або', 'ще', 'вже', 'бо',
+    'коли', 'де', 'хто', 'так', 'ні', 'все', 'мені', 'його', 'цей',
+    'той', 'він', 'вона', 'воно', 'вони', 'ми', 'ви', 'їх', 'мій',
+    'має', 'був', 'буде', 'було', 'були', 'тут', 'там', 'дуже',
+    'при', 'про', 'під', 'над', 'без', 'між', 'через', 'після',
+    'перед', 'лише', 'тільки', 'також', 'можна', 'треба', 'потім',
+    'а', 'б', 'й', 'о', 'е', 'i'
+  ]);
+
+  function extractKeywords(text) {
+    const raw = (text ?? '').toLowerCase();
+    const tokens = raw.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+    const kw = new Set();
+    for (const t of tokens) {
+      if (t.length < 3) continue;
+      if (RELATED_STOP_WORDS.has(t)) continue;
+      kw.add(t);
+    }
+    return kw;
+  }
+
+  const keywordCache = new Map();
+  function getKeywords(note) {
+    const id = String(note.id);
+    if (keywordCache.has(id)) return keywordCache.get(id);
+    const kw = extractKeywords(note.text);
+    keywordCache.set(id, kw);
+    return kw;
+  }
+
+  function findRelatedNote(notes, noteIndex) {
+    const current = notes[noteIndex];
+    if (isThreadNote(current) || isReviewMarkerNote(current)) return null;
+
+    const currentKw = getKeywords(current);
+    if (currentKw.size < 2) return null;
+
+    let bestNote = null;
+    let bestScore = 0;
+
+    for (let i = 0; i < noteIndex; i++) {
+      const candidate = notes[i];
+      if (isThreadNote(candidate) || isReviewMarkerNote(candidate)) continue;
+
+      const candidateKw = getKeywords(candidate);
+      let score = 0;
+      const [smaller, larger] = currentKw.size <= candidateKw.size
+        ? [currentKw, candidateKw]
+        : [candidateKw, currentKw];
+
+      for (const word of smaller) {
+        if (larger.has(word)) score++;
+      }
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestNote = candidate;
+      }
+    }
+
+    if (bestScore < 2) return null;
+    return { note: bestNote, score: bestScore };
+  }
+
+  function relativeTimeLabel(isoFrom, isoTo) {
+    const diff = new Date(isoTo).getTime() - new Date(isoFrom).getTime();
+    if (diff < 0) return '';
+
+    const minutes = Math.floor(diff / 60000);
+    const hours = Math.floor(diff / 3600000);
+    const days = Math.floor(diff / 86400000);
+
+    if (minutes < 2) return 'щойно';
+    if (minutes < 60) return `${minutes} хв тому`;
+    if (hours === 1) return 'годину тому';
+    if (hours < 24) return `${hours} год тому`;
+    if (days === 1) return 'вчора';
+
+    const lastDigit = days % 10;
+    const lastTwo = days % 100;
+    let w;
+    if (lastTwo >= 11 && lastTwo <= 19) w = 'днів';
+    else if (lastDigit === 1) w = 'день';
+    else if (lastDigit >= 2 && lastDigit <= 4) w = 'дні';
+    else w = 'днів';
+
+    return `${days} ${w} тому`;
+  }
 
   function setEditingMode(on) {
     document.body.classList.toggle('is-editing', on);
@@ -642,6 +772,10 @@
 
   function isThreadNote(note) {
     return typeof note?.text === 'string' && note.text.startsWith(THREAD_MARKER);
+  }
+
+  function isReviewMarkerNote(note) {
+    return typeof note?.text === 'string' && note.text.startsWith(REVIEW_MARKER);
   }
 
   function parseThreadPayload(note) {
@@ -935,7 +1069,7 @@
     noteInput.focus();
     try { noteInput.setSelectionRange(noteInput.value.length, noteInput.value.length); } catch (_) {}
 
-    renderCurrentView();
+    renderCurrentView({ preserveScroll: true });
   }
 
   function exitEdit({ restoreInput = true } = {}) {
@@ -950,7 +1084,7 @@
       syncComposerOffset();
     }
 
-    renderCurrentView();
+    renderCurrentView({ preserveScroll: true });
   }
 
   window.addEventListener('keydown', (e) => {
@@ -1139,10 +1273,262 @@
     el.addEventListener('pointerleave', cancel);
   }
 
+  // === Drag-and-drop reorder within day ===
+  let dragState = null;
+  // track which notes were manually dragged (persisted in localStorage)
+  const MOVED_KEY = 'moved_note_ids';
+  const movedNoteIds = new Set(
+    (() => { try { return JSON.parse(localStorage.getItem(MOVED_KEY) || '[]'); } catch { return []; } })()
+  );
+  function persistMovedIds() {
+    localStorage.setItem(MOVED_KEY, JSON.stringify([...movedNoteIds]));
+  }
+
+  function getDayForNote(noteId) {
+    const note = currentNotes.find(n => String(n.id) === String(noteId));
+    return note ? dayKey(note.date) : null;
+  }
+
+  function getDayRows(mountEl, dayStr) {
+    const rows = Array.from(mountEl.querySelectorAll('.note-row[data-note-id]'));
+    return rows.filter(r => {
+      const nid = r.getAttribute('data-note-id');
+      const note = currentNotes.find(n => String(n.id) === nid);
+      return note && dayKey(note.date) === dayStr;
+    });
+  }
+
+  function isNoteMoved(note) {
+    return movedNoteIds.has(String(note.id));
+  }
+
+  function initDragReorder(row, mountEl) {
+    const DRAG_DELAY = 300;
+    const MOVE_THRESH = 6;
+    let timer = null;
+    let startY = 0;
+    let startX = 0;
+    let cancelled = false;
+
+    row.addEventListener('pointerdown', (e) => {
+      if (multiSelectMode || editingNoteId) return;
+      if (isRowActionTarget(e.target)) return;
+
+      const noteId = row.getAttribute('data-note-id');
+      const note = currentNotes.find(n => String(n.id) === noteId);
+      if (!note || isThreadNote(note)) return;
+
+      startY = e.clientY;
+      startX = e.clientX;
+      cancelled = false;
+
+      timer = setTimeout(() => {
+        if (cancelled) return;
+        startDrag(row, noteId, e.clientY, mountEl);
+      }, DRAG_DELAY);
+    });
+
+    row.addEventListener('pointermove', (e) => {
+      if (timer && !dragState) {
+        const dx = Math.abs(e.clientX - startX);
+        const dy = Math.abs(e.clientY - startY);
+        if (dx > MOVE_THRESH || dy > MOVE_THRESH) {
+          clearTimeout(timer);
+          timer = null;
+          cancelled = true;
+        }
+      }
+    });
+
+    const cancelTimer = () => {
+      if (timer) { clearTimeout(timer); timer = null; }
+      cancelled = true;
+    };
+    row.addEventListener('pointerup', cancelTimer);
+    row.addEventListener('pointercancel', cancelTimer);
+  }
+
+  function startDrag(rowEl, noteId, clientY, mountEl) {
+    const dayStr = getDayForNote(noteId);
+    if (!dayStr) return;
+
+    const dayRows = getDayRows(mountEl, dayStr);
+    if (dayRows.length < 2) return;
+
+    const rect = rowEl.getBoundingClientRect();
+    const offsetY = clientY - rect.top;
+
+    // create ghost (floating copy)
+    const ghost = rowEl.cloneNode(true);
+    ghost.className = 'note-row drag-ghost';
+    ghost.style.cssText = `
+      position: fixed;
+      left: ${rect.left + 8}px;
+      top: ${rect.top}px;
+      width: ${rect.width - 16}px;
+      z-index: 9999;
+      pointer-events: none;
+      opacity: 0.92;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.08);
+      border-radius: 12px;
+      background: #fff;
+      padding: 0 8px;
+      transform: scale(1.02);
+      transition: transform 120ms ease-out, box-shadow 120ms ease-out;
+    `;
+    document.body.appendChild(ghost);
+
+    // create placeholder (empty space where note was)
+    const placeholder = document.createElement('div');
+    placeholder.className = 'drag-placeholder';
+    placeholder.style.height = rect.height + 'px';
+    rowEl.parentNode.insertBefore(placeholder, rowEl);
+
+    // hide original
+    rowEl.style.display = 'none';
+
+    const originalOrder = dayRows.map(r => r.getAttribute('data-note-id'));
+    dragState = { noteId, rowEl, dayStr, dayRows, mountEl, ghost, placeholder, offsetY, moved: false, originalOrder };
+    document.body.classList.add('is-reordering');
+
+    if (navigator.vibrate) navigator.vibrate(30);
+
+    document.addEventListener('pointermove', onDragMove);
+    document.addEventListener('pointerup', onDragEnd);
+    document.addEventListener('pointercancel', onDragEnd);
+  }
+
+  function onDragMove(e) {
+    if (!dragState) return;
+    e.preventDefault();
+
+    const { ghost, offsetY, dayRows, placeholder, rowEl } = dragState;
+
+    // move ghost with pointer
+    ghost.style.top = (e.clientY - offsetY) + 'px';
+
+    const y = e.clientY;
+
+    // find which row the pointer is over (excluding hidden original)
+    for (const r of dayRows) {
+      if (r === rowEl) continue;
+      const rect = r.getBoundingClientRect();
+      const mid = rect.top + rect.height / 2;
+
+      if (y >= rect.top && y <= rect.bottom) {
+        // move placeholder to indicate drop position
+        if (y < mid) {
+          r.parentNode.insertBefore(placeholder, r);
+        } else {
+          r.parentNode.insertBefore(placeholder, r.nextSibling);
+        }
+        dragState.moved = true;
+        break;
+      }
+    }
+  }
+
+  function onDragEnd(e) {
+    if (!dragState) return;
+
+    const { rowEl, ghost, placeholder, dayStr, mountEl, noteId, moved } = dragState;
+
+    // remove ghost
+    ghost.remove();
+
+    // show original at placeholder position
+    placeholder.parentNode.insertBefore(rowEl, placeholder);
+    placeholder.remove();
+    rowEl.style.display = '';
+
+    document.body.classList.remove('is-reordering');
+    document.removeEventListener('pointermove', onDragMove);
+    document.removeEventListener('pointerup', onDragEnd);
+    document.removeEventListener('pointercancel', onDragEnd);
+
+    // collect new order and check if it actually changed
+    const newDayRows = getDayRows(mountEl, dayStr);
+    const orderedIds = newDayRows.map(r => r.getAttribute('data-note-id'));
+    const orderChanged = dragState.originalOrder.join(',') !== orderedIds.join(',');
+
+    if (!moved || !orderChanged) {
+      dragState = null;
+      return;
+    }
+
+    // mark only the dragged note as moved
+    movedNoteIds.add(String(noteId));
+    persistMovedIds();
+
+    saveDayPositions(orderedIds, noteId);
+
+    dragState = null;
+  }
+
+  async function saveDayPositions(orderedIds, draggedNoteId) {
+    const updates = [];
+    for (let i = 0; i < orderedIds.length; i++) {
+      const nid = orderedIds[i];
+      const note = currentNotes.find(n => String(n.id) === nid);
+      if (!note) continue;
+
+      const oldPos = note.position;
+      if (oldPos !== i) {
+        note.position = i;
+        updates.push(
+          sb.from('notes')
+            .update({ position: i })
+            .eq('id', note.id)
+            .eq('user_id', user.id)
+        );
+      }
+    }
+    if (updates.length) {
+      await Promise.all(updates);
+      renderCurrentView({ preserveScroll: true });
+    }
+  }
+
+  async function clearNotePosition(noteId) {
+    const nid = String(noteId);
+    const note = currentNotes.find(n => String(n.id) === nid);
+    if (!note || note.position == null) return;
+
+    // get all notes in the same day
+    const dayStr = dayKey(note.date);
+    const dayNotes = currentNotes.filter(n => dayKey(n.date) === dayStr && n.position != null);
+
+    movedNoteIds.delete(nid);
+    persistMovedIds();
+
+    // if only this note or none left with position — reset all in the day
+    const othersWithPos = dayNotes.filter(n => String(n.id) !== nid);
+    const updates = [];
+
+    if (othersWithPos.every(n => !movedNoteIds.has(String(n.id)))) {
+      // no other manually moved notes in this day — clear all positions
+      for (const n of dayNotes) {
+        n.position = null;
+        updates.push(
+          sb.from('notes').update({ position: null }).eq('id', n.id).eq('user_id', user.id)
+        );
+      }
+    } else {
+      // remove this note's position and re-index the rest
+      note.position = null;
+      updates.push(
+        sb.from('notes').update({ position: null }).eq('id', note.id).eq('user_id', user.id)
+      );
+    }
+
+    await Promise.all(updates);
+    renderCurrentView({ preserveScroll: true });
+  }
+
   function isRowActionTarget(target) {
     if (!target) return false;
     return !!target.closest(
-      '.note-del, .task-check, .answer-wrap, .answer-input, .answer-save, [data-answer-save], [data-answer-input], [data-answer-wrap], .multi-check'
+      '.note-del, .task-check, .answer-wrap, .answer-input, .answer-save, [data-answer-save], [data-answer-input], [data-answer-wrap], .multi-check, .note-moved, .related-link'
     );
   }
 
@@ -1819,14 +2205,26 @@
   ) {
     const prevScrollTop = scrollEl.scrollTop;
     const canUseMulti = allowMultiSelect && viewMode === 'feed' && !activeFolderType;
-    const displayNotes = sortByDateAsc
-      ? notes.slice().sort((a, b) => {
-          const ka = sortableDateKey(a.date);
-          const kb = sortableDateKey(b.date);
-          if (ka !== kb) return ka.localeCompare(kb);
-          return String(a.id).localeCompare(String(b.id));
-        })
-      : notes;
+    // Sort notes: by day, then within day by position (if any set) or chronological
+    const displayNotes = notes.slice().sort((a, b) => {
+      const da = dayKey(a.date);
+      const db = dayKey(b.date);
+      if (da !== db) return da.localeCompare(db);
+
+      // within same day
+      const pa = a.position;
+      const pb = b.position;
+      // both have position → sort by position
+      if (pa != null && pb != null) return pa - pb;
+      // one has position, other doesn't → positioned first, then chronological
+      if (pa != null && pb == null) return -1;
+      if (pa == null && pb != null) return 1;
+      // both null → chronological
+      const ka = sortableDateKey(a.date);
+      const kb = sortableDateKey(b.date);
+      if (ka !== kb) return ka.localeCompare(kb);
+      return String(a.id).localeCompare(String(b.id));
+    });
 
     const existingIds = new Set(displayNotes.map((note) => note.id));
     if (openedThreadNoteId && !existingIds.has(openedThreadNoteId)) {
@@ -1866,7 +2264,7 @@
     let prevDay = null;
     const today = todayKey();
 
-    displayNotes.forEach((n) => {
+    displayNotes.forEach((n, nIdx) => {
       const curDay = dayKey(n.date);
 
       if (curDay !== prevDay) {
@@ -1960,7 +2358,7 @@
             </button>
           </div>
         ` : ``}
-        <div class="note-time">${fmtTime(n.date)}</div>
+        <div class="note-time">${fmtTime(n.date)}${isNoteMoved(n) ? '<span class="note-moved" title="Переміщено — натисни щоб повернути">↕</span>' : ''}</div>
 
         <div class="note-body">
           <div class="note-text"></div>
@@ -2083,6 +2481,28 @@
         });
       } else {
         noteTextEl.textContent = n.text ?? '';
+      }
+
+      // === Related note link ===
+      if (!isThread) {
+        const related = findRelatedNote(displayNotes, nIdx);
+        if (related) {
+          const label = relativeTimeLabel(related.note.date, n.date);
+          const link = document.createElement('a');
+          link.className = 'related-link';
+          link.href = '#';
+          link.textContent = label ? `Схожа нотатка \u00B7 ${label}` : 'Схожа нотатка';
+          link.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const targetRow = mountEl.querySelector(`.note-row[data-note-id="${related.note.id}"]`);
+            if (!targetRow) return;
+            targetRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            targetRow.classList.add('note-flash');
+            setTimeout(() => targetRow.classList.remove('note-flash'), 1500);
+          });
+          row.querySelector('.note-body').appendChild(link);
+        }
       }
 
       // Enter edit on dblclick / double-tap (note text area)
@@ -2251,7 +2671,22 @@
         attachHoldToDelete(delBtn, row, n.id, mountEl);
       }
 
+      // click ↕ to reset position
+      const movedBadge = row.querySelector('.note-moved');
+      if (movedBadge) {
+        movedBadge.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          clearNotePosition(n.id);
+        });
+      }
+
       mountEl.appendChild(row);
+
+      // enable drag-to-reorder (only in main feed, not threads/folders)
+      if (mountEl === notesContainer && viewMode === 'feed' && !isThread) {
+        initDragReorder(row, mountEl);
+      }
 
       if (row.classList.contains('note-enter')) {
         requestAnimationFrame(() => row.classList.add('note-enter-active'));
@@ -2287,7 +2722,7 @@
   async function loadNotes() {
     const { data, error } = await sb
       .from('notes')
-      .select('id, text, date, is_task, completed, is_question, answer')
+      .select('id, text, date, is_task, completed, is_question, answer, position')
       .eq('user_id', user.id)
       .order('date', { ascending: true });
 
@@ -2297,8 +2732,23 @@
     }
 
     const rawNotes = data || [];
+    keywordCache.clear();
+
+    // clean up stale movedNoteIds (deleted notes)
+    const noteIdSet = new Set(rawNotes.map(n => String(n.id)));
+    let movedChanged = false;
+    for (const mid of movedNoteIds) {
+      if (!noteIdSet.has(mid)) { movedNoteIds.delete(mid); movedChanged = true; }
+    }
+    if (movedChanged) persistMovedIds();
+
+    // sync review markers from Supabase → localStorage (cross-device)
+    syncReviewMarkers(rawNotes);
+
     const hiddenIds = collectThreadMemberIds(rawNotes);
     currentNotes = rawNotes.filter((note) => {
+      // hide review marker notes from the feed
+      if (isReviewMarkerNote(note)) return false;
       if (isThreadNote(note)) return true;
       return !hiddenIds.has(String(note.id));
     });
@@ -2450,11 +2900,12 @@
   });
 
   threadSheetOverlay.addEventListener('click', closeThreadSheet);
-  threadSheetClose.addEventListener('click', closeThreadSheet);
 
-  // thread composer
+  // thread composer — auto-resize textarea like main feed
   threadNoteInput?.addEventListener('input', () => {
     threadSendBtn.disabled = threadNoteInput.value.trim().length === 0;
+    threadNoteInput.style.height = 'auto';
+    threadNoteInput.style.height = Math.min(threadNoteInput.scrollHeight, 120) + 'px';
   });
 
   threadNoteInput?.addEventListener('keydown', (e) => {
