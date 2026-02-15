@@ -19,7 +19,7 @@
     return;
   }
 
-  // Перевіряємо, що інвайт існує і ще не використаний
+  // Ensure invite exists and is still unused
   const { data: invites, error } = await sb
     .from('invites')
     .select('*')
@@ -37,8 +37,8 @@
     return;
   }
 
-  // ВАЖЛИВО: тут більше НІЯКОГО signUp
-  // Просто показуємо welcome, і відправляємо на login
+  // IMPORTANT: no signUp here
+  // Just show welcome and redirect to login
   loading.style.display = 'none';
   welcomeScreen.style.display = 'block';
 

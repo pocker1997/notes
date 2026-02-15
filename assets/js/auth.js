@@ -2,7 +2,7 @@
 (async function initAuthPage() {
   const sb = window.supabaseClient;
 
-  // Якщо вже залогінений — на головну
+  // If already signed in, redirect to the app
   const { data: { session } } = await sb.auth.getSession();
   if (session) {
     window.location.href = '/';
@@ -26,7 +26,7 @@
     const password = passEl.value;
 
     if (!email || !password) {
-      showError('Введи email та password');
+      showError('Enter email and password');
       return;
     }
 

@@ -28,6 +28,9 @@
   const viewPlanningBtn = document.getElementById('viewPlanningBtn');
   const threadSheet = document.getElementById('thread-sheet');
   const threadSheetOverlay = document.getElementById('thread-sheet-overlay');
+  const threadSheetCloseBtn = document.getElementById('thread-sheet-close');
+  const threadSheetPanel = threadSheet?.querySelector('.thread-sheet-panel');
+  const threadSheetHandle = threadSheet?.querySelector('.thread-sheet-handle');
   const threadSheetList = document.getElementById('thread-sheet-list');
   const threadSheetTitle = document.getElementById('thread-sheet-title');
   const threadSheetSubtitle = document.getElementById('thread-sheet-subtitle');
@@ -37,11 +40,6 @@
   userLabel.textContent = user.email || user.id;
 
   const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-  // === streak ===
-  const streakBadge = document.getElementById('streak-badge');
-  const streakCountEl = document.getElementById('streak-count');
-  const STREAK_MILESTONES = [3, 7, 14, 30, 60, 100];
 
   function todayKey() {
     const d = new Date();
@@ -53,79 +51,6 @@
     d.setDate(d.getDate() - 1);
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   }
-
-  function computeStreak(notes) {
-    const days = new Set();
-    for (const n of notes) {
-      if (n.date) {
-        const raw = (n.date ?? '').toString();
-        const m = raw.match(/^(\d{4}-\d{2}-\d{2})/);
-        if (m) days.add(m[1]);
-      }
-    }
-    const today = todayKey();
-    let cursor = days.has(today) ? today : prevDay(today);
-    let count = 0;
-    while (days.has(cursor)) {
-      count++;
-      cursor = prevDay(cursor);
-    }
-    return count;
-  }
-
-  function updateStreakBadge(streak) {
-    if (streak > 0 && streakBadge) {
-      streakBadge.style.display = '';
-      streakCountEl.textContent = streak;
-    } else if (streakBadge) {
-      streakBadge.style.display = 'none';
-    }
-  }
-
-  function fireCelebration() {
-    if (reduceMotion) return;
-    const overlay = document.createElement('div');
-    overlay.className = 'streak-celebration';
-    const colors = ['#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#ec4899'];
-    const count = 40;
-    for (let i = 0; i < count; i++) {
-      const p = document.createElement('div');
-      p.className = 'streak-particle';
-      const size = 5 + Math.random() * 7;
-      const dur = 3000 + Math.random() * 2000;
-      const delay = Math.random() * 1500;
-      const startX = Math.random() * 100;
-      const sway = (Math.random() - 0.5) * 60;
-      const swayEnd = sway + (Math.random() - 0.5) * 40;
-      p.style.width = size + 'px';
-      p.style.height = size + 'px';
-      p.style.left = startX + '%';
-      p.style.top = '0px';
-      p.style.background = colors[i % colors.length];
-      p.style.setProperty('--ty-start', '-20px');
-      p.style.setProperty('--ty-end', (window.innerHeight + 40) + 'px');
-      p.style.setProperty('--sway', sway + 'px');
-      p.style.setProperty('--sway-end', swayEnd + 'px');
-      p.style.setProperty('--dur', dur + 'ms');
-      p.style.setProperty('--delay', delay + 'ms');
-      overlay.appendChild(p);
-    }
-    document.body.appendChild(overlay);
-    setTimeout(() => overlay.remove(), 5500);
-  }
-
-  function checkStreakCelebration(streak) {
-    if (!STREAK_MILESTONES.includes(streak)) return;
-    const key = `streak_celebrated_${todayKey()}_${streak}`;
-    if (localStorage.getItem(key)) return;
-    localStorage.setItem(key, '1');
-    fireCelebration();
-  }
-
-  window.__debugStreak = {
-    celebrate: () => fireCelebration(),
-    setStreak: (n) => updateStreakBadge(n)
-  };
 
   // === changelog / what's new ===
   const CHANGELOG_VERSION = 'v2';
@@ -143,7 +68,6 @@
   function openChangelog() {
     changelogModal.classList.add('is-open');
     changelogModal.setAttribute('aria-hidden', 'false');
-    fireCelebration();
   }
 
   function closeChangelog() {
@@ -278,8 +202,8 @@
           </svg>
         </div>
         <div class="review-banner-body">
-          <div class="review-banner-title">Ревізія минулого дня</div>
-          <div class="review-banner-sub">${tasks.length} ${tasks.length === 1 ? 'задача' : tasks.length < 5 ? 'задачі' : 'задач'} чекають</div>
+          <div class="review-banner-title">Yesterday review</div>
+          <div class="review-banner-sub">${tasks.length} ${tasks.length === 1 ? 'task' : 'tasks'} waiting</div>
         </div>
         <div class="review-banner-arrow">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -298,8 +222,8 @@
           </svg>
         </div>
         <div class="review-banner-body">
-          <div class="review-banner-title">Ревізія пройдена</div>
-          <div class="review-banner-sub">Наступна через: <span id="review-timer">--:--:--</span></div>
+          <div class="review-banner-title">Review completed</div>
+          <div class="review-banner-sub">Next one in: <span id="review-timer">--:--:--</span></div>
         </div>
       `;
       banner.style.cursor = 'default';
@@ -364,8 +288,8 @@
     animateCounter(reviewIntroCompleted, stats.completed, 500);
 
     const pendingCount = tasks.length;
-    const pendingWord = pendingCount === 1 ? 'задача' : pendingCount < 5 ? 'задачі' : 'задач';
-    reviewIntroPending.textContent = `Є ще ${pendingCount} ${pendingWord}, які треба перевірити`;
+    const pendingWord = pendingCount === 1 ? 'task' : 'tasks';
+    reviewIntroPending.textContent = `${pendingCount} ${pendingWord} still need review`;
 
     // open modal
     reviewModal.classList.add('is-open');
@@ -476,7 +400,6 @@
     animateCounter(reviewStatDone, reviewDoneCount, 600);
     animateCounter(reviewStatSkipped, reviewSkippedCount, 600);
 
-    fireCelebration();
   }
 
   function animateCounter(el, target, durationMs) {
@@ -576,11 +499,11 @@
   function _fakeReviewTasks() {
     const yesterday = prevDay(todayKey());
     return [
-      { id: 'fake1', text: '[] Купити молоко', date: yesterday + 'T10:00:00Z', is_task: true, completed: false },
-      { id: 'fake2', text: '[] Зробити код-рев\'ю', date: yesterday + 'T14:30:00Z', is_task: true, completed: false },
-      { id: 'fake3', text: 'Завдання: написати тести', date: yesterday + 'T16:00:00Z', is_task: true, completed: false },
-      { id: 'fake4', text: '[] Відповісти на лист', date: yesterday + 'T09:15:00Z', is_task: true, completed: false },
-      { id: 'fake5', text: '[] Оновити залежності', date: yesterday + 'T11:45:00Z', is_task: true, completed: false },
+      { id: 'fake1', text: '[] Buy milk', date: yesterday + 'T10:00:00Z', is_task: true, completed: false },
+      { id: 'fake2', text: '[] Do code review', date: yesterday + 'T14:30:00Z', is_task: true, completed: false },
+      { id: 'fake3', text: 'Task: write tests', date: yesterday + 'T16:00:00Z', is_task: true, completed: false },
+      { id: 'fake4', text: '[] Reply to email', date: yesterday + 'T09:15:00Z', is_task: true, completed: false },
+      { id: 'fake5', text: '[] Update dependencies', date: yesterday + 'T11:45:00Z', is_task: true, completed: false },
     ];
   }
 
@@ -608,8 +531,8 @@
       const yesterday = prevDay(todayKey());
       const fakes = _fakeReviewTasks();
       const completedFakes = [
-        { id: 'fakeDone1', text: '[] Прочитати статтю', date: yesterday + 'T08:00:00Z', is_task: true, completed: true },
-        { id: 'fakeDone2', text: '[] Зробити каву', date: yesterday + 'T07:30:00Z', is_task: true, completed: true },
+        { id: 'fakeDone1', text: '[] Read an article', date: yesterday + 'T08:00:00Z', is_task: true, completed: true },
+        { id: 'fakeDone2', text: '[] Make coffee', date: yesterday + 'T07:30:00Z', is_task: true, completed: true },
       ];
       localStorage.removeItem(`review_done_${todayKey()}`);
       currentNotes.push(...fakes, ...completedFakes);
@@ -632,8 +555,8 @@
   document.documentElement.style.setProperty('--hold-ms', `${HOLD_MS_MULTI}ms`);
 
   // === formatting ===
-  const fmtTime = (iso) => new Date(iso).toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' });
-  const fmtDay = (iso) => new Date(iso).toLocaleDateString('uk-UA', { day: '2-digit', month: 'long' });
+  const fmtTime = (iso) => new Date(iso).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+  const fmtDay = (iso) => new Date(iso).toLocaleDateString('en-US', { day: '2-digit', month: 'long' });
 
   const dayKey = (iso) => {
     const raw = (iso ?? '').toString();
@@ -668,6 +591,7 @@
   const selectedNoteIds = new Set();
   let openedThreadNoteId = null;
   let editingThreadItemIndex = null;
+  let editingThreadOriginalText = '';
   let viewMode = 'feed'; // feed | organized
   let activeFolderType = null;
 
@@ -749,21 +673,12 @@
     const hours = Math.floor(diff / 3600000);
     const days = Math.floor(diff / 86400000);
 
-    if (minutes < 2) return 'щойно';
-    if (minutes < 60) return `${minutes} хв тому`;
-    if (hours === 1) return 'годину тому';
-    if (hours < 24) return `${hours} год тому`;
-    if (days === 1) return 'вчора';
-
-    const lastDigit = days % 10;
-    const lastTwo = days % 100;
-    let w;
-    if (lastTwo >= 11 && lastTwo <= 19) w = 'днів';
-    else if (lastDigit === 1) w = 'день';
-    else if (lastDigit >= 2 && lastDigit <= 4) w = 'дні';
-    else w = 'днів';
-
-    return `${days} ${w} тому`;
+    if (minutes < 2) return 'just now';
+    if (minutes < 60) return `${minutes} min ago`;
+    if (hours === 1) return '1 hour ago';
+    if (hours < 24) return `${hours} hours ago`;
+    if (days === 1) return 'yesterday';
+    return `${days} days ago`;
   }
 
   function setEditingMode(on) {
@@ -832,10 +747,10 @@
   }
 
   function folderLabel(type) {
-    if (type === 'task') return 'Завдання';
-    if (type === 'question') return 'Питання';
-    if (type === 'thread') return 'Треди';
-    return 'Нотатки';
+    if (type === 'task') return 'Tasks';
+    if (type === 'question') return 'Questions';
+    if (type === 'thread') return 'Threads';
+    return 'Notes';
   }
 
   function syncComposerOffset() {
@@ -876,7 +791,7 @@
     const canUseMulti = viewMode === 'feed' && !activeFolderType;
     const count = selectedNoteIds.size;
     const threadableCount = selectedThreadSourceNotes().length;
-    multiActionCount.textContent = `Вибрано: ${count}`;
+    multiActionCount.textContent = `Selected: ${count}`;
     multiDeleteBtn.disabled = count === 0;
     multiThreadBtn.disabled = threadableCount < 2;
     document.body.classList.toggle('is-multi-select', canUseMulti && multiSelectMode);
@@ -992,7 +907,7 @@
     }
 
     // 2) Keywords task (Unicode-safe)
-    const kwRe = /(^|[^\p{L}])(задача|завдання|зробити)(:)?(?=[^\p{L}]|$)/iu;
+    const kwRe = /(^|[^\p{L}])(task|todo|задача|завдання|зробити)(:)?(?=[^\p{L}]|$)/iu;
     const m = text.match(kwRe);
 
     if (m && typeof m.index === 'number') {
@@ -1192,7 +1107,7 @@
 
       if (error) {
         rowEl.classList.remove('note-removing');
-        alert('Не вдалось видалити: ' + error.message);
+        alert('Failed to delete note: ' + error.message);
         return;
       }
 
@@ -1547,7 +1462,7 @@
       .eq('user_id', user.id);
 
     if (error) {
-      alert('Не вдалось видалити вибрані нотатки: ' + error.message);
+      alert('Failed to delete selected notes: ' + error.message);
       return;
     }
 
@@ -1558,17 +1473,106 @@
   function closeThreadSheet() {
     openedThreadNoteId = null;
     editingThreadItemIndex = null;
+    editingThreadOriginalText = '';
 
     // restore title element if it was replaced by edit input
-    const head = document.querySelector('.thread-sheet-head');
-    if (head && !head.contains(threadSheetTitle)) {
-      const editInput = head.querySelector('.thread-sheet-title-input');
-      if (editInput) head.replaceChild(threadSheetTitle, editInput);
+    const titleHost = threadSheet?.querySelector('.thread-sheet-head-main');
+    if (titleHost && !titleHost.contains(threadSheetTitle)) {
+      const editInput = titleHost.querySelector('.thread-sheet-title-input');
+      if (editInput) titleHost.replaceChild(threadSheetTitle, editInput);
+    }
+
+    if (threadSheetPanel) {
+      threadSheetPanel.classList.remove('is-dragging');
+      threadSheetPanel.style.transform = '';
+      threadSheetPanel.style.opacity = '';
+    }
+    if (threadSheetOverlay) {
+      threadSheetOverlay.style.opacity = '';
     }
 
     threadSheet.classList.remove('is-open');
     threadSheet.setAttribute('aria-hidden', 'true');
     document.body.classList.remove('thread-sheet-open');
+
+    if (threadNoteInput) {
+      threadNoteInput.value = '';
+      threadNoteInput.style.height = 'auto';
+      threadNoteInput.dataset.mode = 'create';
+    }
+    if (threadSendBtn) threadSendBtn.disabled = true;
+  }
+
+  const THREAD_SHEET_CLOSE_DISTANCE = 120;
+  const THREAD_SHEET_CLOSE_VELOCITY = 0.6;
+  const threadSheetDrag = {
+    active: false,
+    pointerId: null,
+    startY: 0,
+    lastY: 0,
+    startAt: 0
+  };
+
+  function startThreadSheetDrag(e) {
+    if (!threadSheet?.classList.contains('is-open')) return;
+    if (e.button !== undefined && e.button !== 0) return;
+    if (!threadSheetPanel || !threadSheetOverlay) return;
+
+    threadSheetDrag.active = true;
+    threadSheetDrag.pointerId = e.pointerId;
+    threadSheetDrag.startY = e.clientY;
+    threadSheetDrag.lastY = e.clientY;
+    threadSheetDrag.startAt = performance.now();
+    threadSheetPanel.classList.add('is-dragging');
+    threadSheetHandle?.setPointerCapture?.(e.pointerId);
+    e.preventDefault();
+  }
+
+  function updateThreadSheetDrag(e) {
+    if (!threadSheetDrag.active) return;
+    if (threadSheetDrag.pointerId !== null && e.pointerId !== threadSheetDrag.pointerId) return;
+    if (!threadSheetPanel || !threadSheetOverlay) return;
+
+    const dy = Math.max(0, e.clientY - threadSheetDrag.startY);
+    const scale = 1 - Math.min(dy / 1800, 0.02);
+    const panelOpacity = Math.max(0.78, 1 - dy / 340);
+    const overlayOpacity = Math.max(0, 1 - dy / 240);
+
+    threadSheetPanel.style.transform = `translate(-50%, ${dy}px) scale(${scale})`;
+    threadSheetPanel.style.opacity = `${panelOpacity}`;
+    threadSheetOverlay.style.opacity = `${overlayOpacity}`;
+    threadSheetDrag.lastY = e.clientY;
+  }
+
+  function endThreadSheetDrag(e) {
+    if (!threadSheetDrag.active) return;
+    if (threadSheetDrag.pointerId !== null && e.pointerId !== threadSheetDrag.pointerId) return;
+
+    const dy = Math.max(0, threadSheetDrag.lastY - threadSheetDrag.startY);
+    const dt = Math.max(1, performance.now() - threadSheetDrag.startAt);
+    const velocity = dy / dt;
+    const shouldClose = dy > THREAD_SHEET_CLOSE_DISTANCE || velocity > THREAD_SHEET_CLOSE_VELOCITY;
+
+    threadSheetDrag.active = false;
+    threadSheetDrag.pointerId = null;
+
+    if (!threadSheetPanel || !threadSheetOverlay) return;
+
+    threadSheetPanel.classList.remove('is-dragging');
+
+    if (shouldClose) {
+      threadSheetPanel.style.transform = '';
+      threadSheetPanel.style.opacity = '';
+      threadSheetOverlay.style.opacity = '';
+      closeThreadSheet();
+      return;
+    }
+
+    requestAnimationFrame(() => {
+      threadSheetPanel.style.transform = '';
+      threadSheetPanel.style.opacity = '';
+      threadSheetOverlay.style.opacity = '';
+    });
   }
 
   function escAttr(v) {
@@ -1614,7 +1618,7 @@
       .eq('user_id', user.id);
 
     if (error) {
-      alert('Не вдалось оновити тред: ' + error.message);
+      alert('Failed to update thread: ' + error.message);
       return null;
     }
 
@@ -1641,7 +1645,7 @@
       .eq('user_id', user.id);
 
     if (error) {
-      alert('Не вдалось оновити назву: ' + error.message);
+      alert('Failed to update title: ' + error.message);
       return null;
     }
 
@@ -1655,7 +1659,7 @@
     input.type = 'text';
     input.className = 'thread-sheet-title-input';
     input.value = currentTitle;
-    input.placeholder = 'Назва треду...';
+    input.placeholder = 'Thread title...';
 
     const head = threadSheetTitle.parentNode;
     head.replaceChild(input, threadSheetTitle);
@@ -1672,7 +1676,7 @@
         const result = await updateThreadTitle(note.id, val);
         if (result) {
           head.replaceChild(threadSheetTitle, input);
-          threadSheetTitle.textContent = val || 'Тред';
+          threadSheetTitle.textContent = val || 'Thread';
           // re-render feed to update preview
           renderCurrentView({ preserveScroll: true });
           return;
@@ -1680,7 +1684,7 @@
       }
 
       head.replaceChild(threadSheetTitle, input);
-      threadSheetTitle.textContent = currentTitle || 'Тред';
+      threadSheetTitle.textContent = currentTitle || 'Thread';
     }
 
     input.addEventListener('keydown', (e) => {
@@ -1692,8 +1696,8 @@
 
   function renderThreadSheetFeed(note, payload) {
     const items = safeThreadItems(payload);
-    threadSheetTitle.textContent = payload.title || 'Тред';
-    const msgWord = items.length === 1 ? 'повідомлення' : items.length < 5 ? 'повідомлення' : 'повідомлень';
+    threadSheetTitle.textContent = payload.title || 'Thread';
+    const msgWord = items.length === 1 ? 'message' : 'messages';
     threadSheetSubtitle.textContent = `${items.length} ${msgWord}`;
 
     // click on title → edit
@@ -1703,12 +1707,32 @@
     if (!items.length) {
       const empty = document.createElement('div');
       empty.className = 'empty-state';
-      empty.innerHTML = `<div class="empty-text">Тред порожній.</div>`;
+      empty.innerHTML = `<div class="empty-text">Thread is empty.</div>`;
       threadSheetList.appendChild(empty);
+      if (threadNoteInput) {
+        threadNoteInput.value = '';
+        threadNoteInput.style.height = 'auto';
+        threadNoteInput.dataset.mode = 'create';
+      }
+      if (threadSendBtn) threadSendBtn.disabled = true;
       return;
     }
 
+    let prevDay = null;
     items.forEach((item, idx) => {
+      const currentDay = dayKey(item.date);
+      if (currentDay !== prevDay) {
+        const sep = document.createElement('div');
+        sep.className = 'day-sep';
+        sep.innerHTML = `
+          <div class="day-sep-line"></div>
+          <div class="day-sep-label">${fmtDay(item.date)}</div>
+          <div class="day-sep-line"></div>
+        `;
+        threadSheetList.appendChild(sep);
+        prevDay = currentDay;
+      }
+
       const isEditingThis = editingThreadItemIndex === idx;
       const taskInfo = parseTask(item.text);
       const isTask = !!(item.is_task || taskInfo.isTask);
@@ -1722,7 +1746,7 @@
 
       const rightButtonHtml = isEditingThis
         ? `
-          <button class="note-del note-cancel" type="button" aria-label="Скасувати редагування" data-thread-cancel="${idx}">
+          <button class="note-del note-cancel" type="button" aria-label="Cancel editing" data-thread-cancel="${idx}">
             <span class="note-del-ico" aria-hidden="true">
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M18 6L6 18"></path>
@@ -1732,7 +1756,7 @@
           </button>
         `
         : `
-          <button class="note-del" type="button" aria-label="Видалити нотатку з треду" data-thread-del="${idx}">
+          <button class="note-del" type="button" aria-label="Delete note from thread" data-thread-del="${idx}">
             <span class="note-del-ico" aria-hidden="true">
               <span class="ico-base">${deleteIconSvg('currentColor')}</span>
               <span class="ico-mask">${deleteIconSvg('white')}</span>
@@ -1746,9 +1770,9 @@
           <div class="note-text"></div>
           ${isQ ? `
             <div class="answer-wrap" data-thread-answer-wrap="${idx}">
-              <span class="answer-label">Відповідь:</span>
-              <input class="answer-input" type="text" placeholder="Почни вводити..." value="${escAttr(item.answer ?? '')}" readonly data-thread-answer-input="${idx}" />
-              <button class="answer-save" type="button" aria-label="Зберегти відповідь" data-thread-answer-save="${idx}">
+              <span class="answer-label">Answer:</span>
+              <input class="answer-input" type="text" placeholder="Start typing..." value="${escAttr(item.answer ?? '')}" readonly data-thread-answer-input="${idx}" />
+              <button class="answer-save" type="button" aria-label="Save answer" data-thread-answer-save="${idx}">
                 <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                   <path d="M20 6L9 17l-5-5"></path>
                 </svg>
@@ -1761,64 +1785,7 @@
 
       const noteTextEl = row.querySelector('.note-text');
 
-      if (isEditingThis) {
-        const ta = document.createElement('textarea');
-        ta.className = 'answer-input';
-        ta.style.background = '#f9fafb';
-        ta.style.border = '1px solid #e5e7eb';
-        ta.style.borderRadius = '10px';
-        ta.style.padding = '8px 10px';
-        ta.style.width = '100%';
-        ta.style.minHeight = '42px';
-        ta.style.resize = 'vertical';
-        ta.value = item.text ?? '';
-        noteTextEl.appendChild(ta);
-
-        const finishEdit = async (save) => {
-          if (editingThreadItemIndex !== idx) return;
-          const nextText = (ta.value ?? '').trim();
-          editingThreadItemIndex = null;
-
-          if (!save || !nextText || nextText === (item.text ?? '')) {
-            renderThreadSheetFeed(note, payload);
-            return;
-          }
-
-          const nextTaskInfo = parseTask(nextText);
-          const nextIsTask = !!nextTaskInfo.isTask;
-          const nextIsQuestion = isQuestionText(nextText);
-
-          const changed = await mutateOpenedThreadPayload((list) => {
-            if (!list[idx]) return list;
-            list[idx].text = nextText;
-            list[idx].is_task = nextIsTask;
-            list[idx].is_question = nextIsQuestion;
-            if (!nextIsTask) list[idx].completed = false;
-            if (!nextIsQuestion) list[idx].answer = null;
-            return list;
-          });
-          if (!changed) return;
-          renderCurrentView({ preserveScroll: true });
-          renderThreadSheetFeed(changed.note, changed.payload);
-        };
-
-        ta.addEventListener('keydown', (e) => {
-          if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            finishEdit(true);
-          }
-          if (e.key === 'Escape') {
-            e.preventDefault();
-            finishEdit(false);
-          }
-        });
-        ta.addEventListener('blur', () => finishEdit(true));
-
-        requestAnimationFrame(() => {
-          ta.focus();
-          try { ta.setSelectionRange(ta.value.length, ta.value.length); } catch (_) {}
-        });
-      } else if (isTask) {
+      if (isTask) {
         const wrap = document.createElement('div');
         wrap.className = 'task-line';
 
@@ -1826,7 +1793,7 @@
         cb.className = 'task-check';
         cb.type = 'button';
         cb.setAttribute('role', 'checkbox');
-        cb.setAttribute('aria-label', item.completed ? 'Позначити як невиконану' : 'Позначити як виконану');
+        cb.setAttribute('aria-label', item.completed ? 'Mark as not completed' : 'Mark as completed');
         cb.setAttribute('aria-checked', item.completed ? 'true' : 'false');
         cb.innerHTML = `
           <svg class="task-check-ico" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -1865,6 +1832,16 @@
         if (e.target.closest('.note-del, .task-check, .answer-wrap')) return;
         if (editingThreadItemIndex !== null) return;
         editingThreadItemIndex = idx;
+        editingThreadOriginalText = item.text ?? '';
+        if (threadNoteInput) {
+          threadNoteInput.value = item.text ?? '';
+          threadNoteInput.dataset.mode = 'edit';
+          threadSendBtn.disabled = threadNoteInput.value.trim().length === 0;
+          threadNoteInput.style.height = 'auto';
+          threadNoteInput.style.height = Math.min(threadNoteInput.scrollHeight, 120) + 'px';
+          threadNoteInput.focus();
+          try { threadNoteInput.setSelectionRange(threadNoteInput.value.length, threadNoteInput.value.length); } catch (_) {}
+        }
         renderThreadSheetFeed(note, payload);
       });
 
@@ -1872,6 +1849,13 @@
       if (cancelBtn) {
         cancelBtn.addEventListener('click', () => {
           editingThreadItemIndex = null;
+          editingThreadOriginalText = '';
+          if (threadNoteInput) {
+            threadNoteInput.value = '';
+            threadNoteInput.style.height = 'auto';
+            threadNoteInput.dataset.mode = 'create';
+          }
+          if (threadSendBtn) threadSendBtn.disabled = true;
           renderThreadSheetFeed(note, payload);
         });
       } else {
@@ -1975,17 +1959,48 @@
 
       threadSheetList.appendChild(row);
     });
+
+    if (threadNoteInput) {
+      if (editingThreadItemIndex !== null && !items[editingThreadItemIndex]) {
+        editingThreadItemIndex = null;
+        editingThreadOriginalText = '';
+      }
+      if (editingThreadItemIndex !== null && items[editingThreadItemIndex]) {
+        const currentText = items[editingThreadItemIndex].text ?? '';
+        if (threadNoteInput.value !== currentText) {
+          threadNoteInput.value = currentText;
+          threadNoteInput.style.height = 'auto';
+          threadNoteInput.style.height = Math.min(threadNoteInput.scrollHeight, 120) + 'px';
+        }
+        threadNoteInput.dataset.mode = 'edit';
+        if (threadSendBtn) threadSendBtn.disabled = threadNoteInput.value.trim().length === 0;
+      } else {
+        threadNoteInput.dataset.mode = 'create';
+      }
+    }
   }
 
   function openThreadSheet(note, payload) {
     openedThreadNoteId = note.id;
     editingThreadItemIndex = null;
+    editingThreadOriginalText = '';
     renderThreadSheetFeed(note, payload);
 
     // reset thread composer
     if (threadNoteInput) {
       threadNoteInput.value = '';
       threadSendBtn.disabled = true;
+      threadNoteInput.style.height = 'auto';
+      threadNoteInput.dataset.mode = 'create';
+    }
+
+    if (threadSheetPanel) {
+      threadSheetPanel.classList.remove('is-dragging');
+      threadSheetPanel.style.transform = '';
+      threadSheetPanel.style.opacity = '';
+    }
+    if (threadSheetOverlay) {
+      threadSheetOverlay.style.opacity = '';
     }
 
     threadSheet.classList.add('is-open');
@@ -2036,7 +2051,7 @@
 
     if (error) {
       selectedRows.forEach((row) => row.classList.remove('thread-merging'));
-      alert('Не вдалось створити тред: ' + error.message);
+      alert('Failed to create thread: ' + error.message);
       return;
     }
 
@@ -2049,7 +2064,7 @@
         .eq('user_id', user.id);
 
       if (deleteErr) {
-        alert('Тред створено, але не вдалось прибрати вихідні нотатки: ' + deleteErr.message);
+        alert('Thread was created, but failed to remove source notes: ' + deleteErr.message);
       }
     }
 
@@ -2069,7 +2084,7 @@
       .eq('user_id', user.id);
 
     if (error) {
-      alert('Не вдалось оновити задачу: ' + error.message);
+      alert('Failed to update task: ' + error.message);
       return false;
     }
     return true;
@@ -2086,7 +2101,7 @@
       .eq('user_id', user.id);
 
     if (error) {
-      alert('Не вдалось зберегти відповідь: ' + error.message);
+      alert('Failed to save answer: ' + error.message);
       return false;
     }
 
@@ -2116,8 +2131,8 @@
     if (!types.length) {
       notesContainer.innerHTML = `
         <div class="empty-state">
-          <div class="empty-text">Папок поки немає.</div>
-          <div class="empty-hint">Додай нотатки, щоб вони зʼявились у впорядкованому режимі.</div>
+          <div class="empty-text">No folders yet.</div>
+          <div class="empty-hint">Add notes to see them grouped in Organized mode.</div>
         </div>
       `;
       return;
@@ -2159,7 +2174,7 @@
 
     notesContainer.innerHTML = `
       <div class="folder-feed-head">
-        <button type="button" class="folder-back" id="folderBackBtn">Назад</button>
+        <button type="button" class="folder-back" id="folderBackBtn">Back</button>
       </div>
       <div class="folder-feed-title">${folderLabel(activeFolderType)}</div>
       <div id="folderFeedList"></div>
@@ -2253,8 +2268,8 @@
       } else {
         mountEl.innerHTML = `
           <div class="empty-state">
-            <div class="empty-text">Поки що нотаток немає.</div>
-            <div class="empty-hint">Напиши першу нотатку нижче.</div>
+            <div class="empty-text">No notes yet.</div>
+            <div class="empty-hint">Write your first note below.</div>
           </div>
         `;
       }
@@ -2315,7 +2330,7 @@
 
       const rightButtonHtml = isEditingThis
         ? `
-          <button class="note-del note-cancel" type="button" aria-label="Закрити редагування" data-cancel="${n.id}">
+          <button class="note-del note-cancel" type="button" aria-label="Close editing" data-cancel="${n.id}">
             <span class="note-del-ico" aria-hidden="true">
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M18 6L6 18"></path>
@@ -2325,7 +2340,7 @@
           </button>
         `
         : `
-          <button class="note-del" type="button" aria-label="Видалити нотатку" data-del="${n.id}">
+          <button class="note-del" type="button" aria-label="Delete note" data-del="${n.id}">
             <span class="note-del-ico" aria-hidden="true">
               <!-- base icon (gray) -->
               <svg class="ico-base" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -2351,22 +2366,22 @@
       row.innerHTML = `
         ${canUseMulti ? `
           <div class="multi-check-col">
-            <button class="multi-check" type="button" aria-label="Вибрати нотатку" aria-checked="${selectedNoteIds.has(n.id) ? 'true' : 'false'}" data-multi="${n.id}">
+            <button class="multi-check" type="button" aria-label="Select note" aria-checked="${selectedNoteIds.has(n.id) ? 'true' : 'false'}" data-multi="${n.id}">
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M20 6L9 17l-5-5"></path>
               </svg>
             </button>
           </div>
         ` : ``}
-        <div class="note-time">${fmtTime(n.date)}${isNoteMoved(n) ? '<span class="note-moved" title="Переміщено — натисни щоб повернути">↕</span>' : ''}</div>
+        <div class="note-time">${fmtTime(n.date)}${isNoteMoved(n) ? '<span class="note-moved" title="Moved. Click to reset position">↕</span>' : ''}</div>
 
         <div class="note-body">
           <div class="note-text"></div>
           ${isQ ? `
             <div class="answer-wrap ${lastInsertedId && n.id === lastInsertedId ? 'answer-enter' : ''}" data-answer-wrap="${n.id}">
-              <span class="answer-label">Відповідь:</span>
-              <input class="answer-input" type="text" placeholder="Почни вводити..." value="${(n.answer ?? '').replace(/"/g, '&quot;')}" readonly data-answer-input="${n.id}" />
-              <button class="answer-save" type="button" aria-label="Зберегти відповідь" data-answer-save="${n.id}">
+              <span class="answer-label">Answer:</span>
+              <input class="answer-input" type="text" placeholder="Start typing..." value="${(n.answer ?? '').replace(/"/g, '&quot;')}" readonly data-answer-input="${n.id}" />
+              <button class="answer-save" type="button" aria-label="Save answer" data-answer-save="${n.id}">
                 <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                   <path d="M20 6L9 17l-5-5"></path>
                 </svg>
@@ -2412,7 +2427,7 @@
           previewEl.classList.add('has-title');
           previewEl.textContent = threadTitle;
         } else {
-          previewEl.textContent = lastText || 'Відкрий тред, щоб подивитись повідомлення';
+          previewEl.textContent = lastText || 'Open thread to view messages';
         }
 
         topCard.appendChild(previewEl);
@@ -2435,7 +2450,7 @@
         cb.className = 'task-check';
         cb.type = 'button';
         cb.setAttribute('role', 'checkbox');
-        cb.setAttribute('aria-label', completed ? 'Позначити як невиконану' : 'Позначити як виконану');
+        cb.setAttribute('aria-label', completed ? 'Mark as not completed' : 'Mark as completed');
         cb.setAttribute('aria-checked', completed ? 'true' : 'false');
         cb.dataset.taskId = n.id;
 
@@ -2468,7 +2483,7 @@
           n.completed = next;
           row.classList.toggle('task-completed', next);
           cb.setAttribute('aria-checked', next ? 'true' : 'false');
-          cb.setAttribute('aria-label', next ? 'Позначити як невиконану' : 'Позначити як виконану');
+          cb.setAttribute('aria-label', next ? 'Mark as not completed' : 'Mark as completed');
 
           const ok = await toggleTaskCompleted(n.id, next);
           if (!ok) {
@@ -2476,7 +2491,7 @@
             n.completed = prev;
             row.classList.toggle('task-completed', prev);
             cb.setAttribute('aria-checked', prev ? 'true' : 'false');
-            cb.setAttribute('aria-label', prev ? 'Позначити як невиконану' : 'Позначити як виконану');
+            cb.setAttribute('aria-label', prev ? 'Mark as not completed' : 'Mark as completed');
           }
         });
       } else {
@@ -2491,7 +2506,7 @@
           const link = document.createElement('a');
           link.className = 'related-link';
           link.href = '#';
-          link.textContent = label ? `Схожа нотатка \u00B7 ${label}` : 'Схожа нотатка';
+          link.textContent = label ? `Related note \u00B7 ${label}` : 'Related note';
           link.addEventListener('click', (e) => {
             e.preventDefault();
             e.stopPropagation();
@@ -2621,12 +2636,11 @@
 
         input.addEventListener('input', () => {
           if (!editingAnswer) return;
-          // “надрукував хоча б один символ” -> показуємо галочку
+          // Show save only after at least one typed symbol
           if (input.value.length >= 1) {
             saveBtn.classList.add('is-visible');
           } else {
-            // якщо повністю стер — все одно може бути зміна, але за умовою “1 символ” для появи
-            // залишимо логіку буквальну
+            // If user erased everything, hide save button per the same rule
             saveBtn.classList.remove('is-visible');
           }
         });
@@ -2727,7 +2741,7 @@
       .order('date', { ascending: true });
 
     if (error) {
-      notesContainer.innerHTML = `<div class="text-sm text-red-600">Помилка завантаження: ${error.message}</div>`;
+      notesContainer.innerHTML = `<div class="text-sm text-red-600">Load error: ${error.message}</div>`;
       return;
     }
 
@@ -2801,7 +2815,7 @@
       noteInput.focus();
 
       if (error) {
-        alert('Помилка збереження: ' + error.message);
+        alert('Save error: ' + error.message);
         sendButton.disabled = false;
         return;
       }
@@ -2834,16 +2848,13 @@
     syncComposerOffset();
 
     if (error) {
-      alert('Помилка збереження: ' + error.message);
+      alert('Save error: ' + error.message);
       return;
     }
 
     lastInsertedId = data?.id ?? null;
     await loadNotes();
 
-    const streak = computeStreak(currentNotes);
-    updateStreakBadge(streak);
-    checkStreakCelebration(streak);
   }
 
   // ==========
@@ -2887,19 +2898,24 @@
   viewFeedBtn?.addEventListener('click', () => setViewMode('feed'));
   viewOrganizedBtn?.addEventListener('click', () => setViewMode('organized'));
   viewPlanningBtn?.addEventListener('click', () => {
-    alert('Планування додамо в наступному оновленні.');
+    alert('Planning will be added in the next update.');
   });
   viewModeToggle?.addEventListener('click', (e) => {
     const targetBtn = e.target.closest('[data-view-mode]');
     if (!targetBtn) return;
     if (targetBtn.dataset.viewMode === 'planning') {
-      alert('Планування додамо в наступному оновленні.');
+      alert('Planning will be added in the next update.');
       return;
     }
     setViewMode(targetBtn.dataset.viewMode);
   });
 
-  threadSheetOverlay.addEventListener('click', closeThreadSheet);
+  threadSheetOverlay?.addEventListener('click', closeThreadSheet);
+  threadSheetCloseBtn?.addEventListener('click', closeThreadSheet);
+  threadSheetHandle?.addEventListener('pointerdown', startThreadSheetDrag);
+  threadSheetHandle?.addEventListener('pointermove', updateThreadSheetDrag);
+  threadSheetHandle?.addEventListener('pointerup', endThreadSheetDrag);
+  threadSheetHandle?.addEventListener('pointercancel', endThreadSheetDrag);
 
   // thread composer — auto-resize textarea like main feed
   threadNoteInput?.addEventListener('input', () => {
@@ -2919,33 +2935,84 @@
 
   async function submitThreadNote() {
     const text = threadNoteInput.value.trim();
-    if (!text || !openedThreadNoteId) return;
+    if (!openedThreadNoteId) return;
 
     threadNoteInput.disabled = true;
     threadSendBtn.disabled = true;
 
-    const taskInfo = parseTask(text);
+    const isEditingThreadItem = editingThreadItemIndex !== null;
+    const nextText = text;
+    let result = null;
 
-    const result = await mutateOpenedThreadPayload((items) => {
-      items.push({
-        id: null,
-        text,
-        date: new Date().toISOString(),
-        is_task: !!taskInfo.isTask,
-        completed: false,
-        is_question: isQuestionText(text),
-        answer: null
+    if (isEditingThreadItem) {
+      const idx = editingThreadItemIndex;
+      if (!nextText || nextText === editingThreadOriginalText) {
+        editingThreadItemIndex = null;
+        editingThreadOriginalText = '';
+        threadNoteInput.disabled = false;
+        threadNoteInput.value = '';
+        threadNoteInput.style.height = 'auto';
+        threadNoteInput.dataset.mode = 'create';
+        threadSendBtn.disabled = true;
+        const note = currentNotes.find((n) => n.id === openedThreadNoteId);
+        const payload = note ? parseThreadPayload(note) : null;
+        if (note && payload) {
+          renderThreadSheetFeed(note, payload);
+        }
+        return;
+      }
+
+      const taskInfo = parseTask(nextText);
+      const nextIsTask = !!taskInfo.isTask;
+      const nextIsQuestion = isQuestionText(nextText);
+
+      result = await mutateOpenedThreadPayload((items) => {
+        if (!items[idx]) return items;
+        items[idx].text = nextText;
+        items[idx].is_task = nextIsTask;
+        items[idx].is_question = nextIsQuestion;
+        if (!nextIsTask) items[idx].completed = false;
+        if (!nextIsQuestion) items[idx].answer = null;
+        return items;
       });
-      return items;
-    });
+    } else {
+      if (!nextText) {
+        threadNoteInput.disabled = false;
+        threadSendBtn.disabled = true;
+        return;
+      }
+      const taskInfo = parseTask(nextText);
+      result = await mutateOpenedThreadPayload((items) => {
+        items.push({
+          id: null,
+          text: nextText,
+          date: new Date().toISOString(),
+          is_task: !!taskInfo.isTask,
+          completed: false,
+          is_question: isQuestionText(nextText),
+          answer: null
+        });
+        return items;
+      });
+    }
 
     threadNoteInput.disabled = false;
+
+    if (!result) {
+      threadSendBtn.disabled = threadNoteInput.value.trim().length === 0;
+      return;
+    }
+
     threadNoteInput.value = '';
     threadSendBtn.disabled = true;
+    threadNoteInput.style.height = 'auto';
+    threadNoteInput.dataset.mode = 'create';
     threadNoteInput.focus();
 
-    if (result) {
-      renderThreadSheetFeed(result.note, result.payload);
+    editingThreadItemIndex = null;
+    editingThreadOriginalText = '';
+    renderThreadSheetFeed(result.note, result.payload);
+    if (!isEditingThreadItem) {
       // scroll to bottom of thread list
       threadSheetList.scrollTop = threadSheetList.scrollHeight;
     }
@@ -2963,8 +3030,6 @@
   updateComposerVisibility();
   updateMultiActionState();
   await loadNotes();
-  updateStreakBadge(computeStreak(currentNotes));
-
   // show changelog on first visit after deploy
   if (!isChangelogSeen()) {
     setTimeout(() => openChangelog(), 600);

@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html lang="uk">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1.0" />
   <title>Admin — Invites</title>
-  <meta name="description" content="Адмін-панель для керування інвайтами" />
+  <meta name="description" content="Admin panel for invite management" />
   <meta name="robots" content="noindex, nofollow" />
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -18,30 +18,30 @@
         <div class="subtitle" id="adminLabel">—</div>
       </div>
       <div class="actions">
-        <a class="btn ghost" href="/">Нотатки</a>
-        <button class="btn" id="logoutBtn">Вийти</button>
+        <a class="btn ghost" href="/">Notes</a>
+        <button class="btn" id="logoutBtn">Log out</button>
       </div>
     </header>
 
     <main class="card">
       <div class="row">
         <div>
-          <h2>Інвайти</h2>
-          <p class="muted">Створюй інвайт-лінк і передавай користувачу. Інвайт лише показує welcome і веде на login.</p>
+          <h2>Invites</h2>
+          <p class="muted">Create an invite link and share it with a user. The invite only shows welcome and sends to login.</p>
         </div>
 
-        <button class="btn primary" id="createInviteBtn">Створити інвайт</button>
+        <button class="btn primary" id="createInviteBtn">Create invite</button>
       </div>
 
       <div class="divider"></div>
 
       <div class="row between">
         <div class="muted" id="stats">—</div>
-        <button class="btn ghost" id="refreshBtn">Оновити</button>
+        <button class="btn ghost" id="refreshBtn">Refresh</button>
       </div>
 
       <div class="tableWrap">
-        <table class="table" aria-label="Таблиця інвайтів">
+        <table class="table" aria-label="Invites table">
           <thead>
             <tr>
               <th scope="col">Code</th>
@@ -51,7 +51,7 @@
             </tr>
           </thead>
           <tbody id="invitesTbody">
-            <tr><td colspan="4" class="muted">Завантаження…</td></tr>
+            <tr><td colspan="4" class="muted">Loading…</td></tr>
           </tbody>
         </table>
       </div>

@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html lang="uk">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Welcome!</title>
-  <meta name="description" content="Сторінка запрошення до нотаток" />
+  <meta name="description" content="Invitation page for notes" />
   <meta name="robots" content="noindex, nofollow" />
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <link rel="stylesheet" href="/assets/css/invite.css" />
@@ -12,17 +12,17 @@
 <body>
   <div class="loading" id="loading">
     <div class="loading-spinner"></div>
-    <div class="loading-text">Перевірка запрошення...</div>
+    <div class="loading-text">Checking invite...</div>
   </div>
 
   <div class="welcome-screen" id="welcomeScreen" style="display: none;">
     <h1 class="welcome-text">Welcome!</h1>
-    <p class="welcome-sub">Тепер увійди під своїм email + password</p>
+    <p class="welcome-sub">Now sign in with your email and password</p>
   </div>
 
   <div class="error-screen" id="errorScreen">
     <h1>Invalid Invite</h1>
-    <p>Це запрошення недійсне або вже використане</p>
+    <p>This invite is invalid or already used</p>
   </div>
 
   <script src="/assets/js/supabaseclient.js"></script>

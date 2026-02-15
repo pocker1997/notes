@@ -25,7 +25,7 @@
     errorBox.textContent = '';
   }
 
-  // 1) Перевірка сесії
+  // 1) Session check
   const { data: { session } } = await sb.auth.getSession();
   if (!session) {
     window.location.href = '/login.html';
@@ -35,19 +35,19 @@
   const user = session.user;
   adminLabel.textContent = user.email || user.id;
 
-  // 2) Простий "гейт" на адміна (щоб не пускати будь-кого)
-  //    Замінити на свій email(и).
+  // 2) Simple admin gate
+  //    Replace with your own admin email(s).
   const ADMIN_EMAILS = [
     "your-admin@email.com"
   ];
 
   if (user.email && !ADMIN_EMAILS.includes(user.email)) {
-    showError("Немає доступу: цей акаунт не адмін.");
+    showError("Access denied: this account is not an admin.");
     createInviteBtn.disabled = true;
   }
 
   // 3) Helpers
-  const fmt = (iso) => new Date(iso).toLocaleString('uk-UA', { dateStyle: 'medium', timeStyle: 'short' });
+  const fmt = (iso) => new Date(iso).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' });
 
   function makeCode(len = 8) {
     const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
@@ -57,14 +57,14 @@
   }
 
   function inviteLink(code) {
-    // На Netlify це буде твій домен. Тут беремо поточний origin.
+    // Uses current origin, so this works on your deployed domain.
     return `${window.location.origin}/invite.html?code=${encodeURIComponent(code)}`;
   }
 
   async function copy(text) {
     try {
       await navigator.clipboard.writeText(text);
-      showToast("Скопійовано");
+      showToast("Copied");
     } catch {
       // fallback
       const ta = document.createElement('textarea');
@@ -73,14 +73,14 @@
       ta.select();
       document.execCommand('copy');
       ta.remove();
-      showToast("Скопійовано");
+      showToast("Copied");
     }
   }
 
   // 4) Load invites
   async function loadInvites() {
     clearError();
-    tbody.innerHTML = `<tr><td colspan="4" class="muted">Завантаження…</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="4" class="muted">Loading…</td></tr>`;
 
     const { data, error } = await sb
       .from('invites')
@@ -89,17 +89,17 @@
       .limit(200);
 
     if (error) {
-      tbody.innerHTML = `<tr><td colspan="4" class="muted">Помилка</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="4" class="muted">Error</td></tr>`;
       showError(error.message);
       return;
     }
 
     const invites = data || [];
     const unused = invites.filter(i => !i.used_at && !i.used_by).length;
-    stats.textContent = `Всього: ${invites.length} • Невикористаних: ${unused} • Використаних: ${invites.length - unused}`;
+    stats.textContent = `Total: ${invites.length} • Unused: ${unused} • Used: ${invites.length - unused}`;
 
     if (!invites.length) {
-      tbody.innerHTML = `<tr><td colspan="4" class="muted">Інвайтів поки немає</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="4" class="muted">No invites yet</td></tr>`;
       return;
     }
 
@@ -118,8 +118,8 @@
         <td>${fmt(inv.created_at)}</td>
         <td>${statusHtml}</td>
         <td style="text-align:right; white-space:nowrap;">
-          <button class="btn ghost" data-copy="${inv.code}">Копіювати лінк</button>
-          <button class="btn" data-copycode="${inv.code}">Копіювати code</button>
+          <button class="btn ghost" data-copy="${inv.code}">Copy link</button>
+          <button class="btn" data-copycode="${inv.code}">Copy code</button>
         </td>
       `;
 
@@ -151,10 +151,10 @@
       return;
     }
 
-    showToast("Інвайт створено");
+    showToast("Invite created");
     await loadInvites();
 
-    // одразу копіюємо лінк
+    // copy the invite link right away
     await copy(inviteLink(code));
   }
 
