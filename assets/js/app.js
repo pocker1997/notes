@@ -34,6 +34,11 @@
   const threadSheetList = document.getElementById('thread-sheet-list');
   const threadSheetTitle = document.getElementById('thread-sheet-title');
   const threadSheetSubtitle = document.getElementById('thread-sheet-subtitle');
+  const threadShareTrigger = document.getElementById('thread-share-trigger');
+  const threadSharePopover = document.getElementById('thread-share-popover');
+  const threadPublicToggle = document.getElementById('thread-public-toggle');
+  const threadShareBtn = document.getElementById('thread-share-btn');
+  const threadShareHint = document.getElementById('thread-share-hint');
   const threadNoteInput = document.getElementById('thread-note-input');
   const threadSendBtn = document.getElementById('thread-send-btn');
 
@@ -654,6 +659,8 @@
   let openedThreadNoteId = null;
   let editingThreadItemIndex = null;
   let editingThreadOriginalText = '';
+  let threadLiveInterval = null;
+  let threadLastPayloadHash = null;
   let viewMode = 'feed'; // feed | organized
   let activeFolderType = null;
 
@@ -1069,6 +1076,10 @@
 
     if (threadSheet.classList.contains('is-open')) {
       e.preventDefault();
+      if (isThreadSharePopoverOpen()) {
+        closeThreadSharePopover();
+        return;
+      }
       closeThreadSheet();
       return;
     }
@@ -1541,6 +1552,42 @@
     await loadNotes();
   }
 
+  function startThreadLiveSync(threadNoteId) {
+    stopThreadLiveSync();
+    if (!threadNoteId) return;
+    threadLastPayloadHash = currentNotes.find((n) => String(n.id) === String(threadNoteId))?.answer || null;
+    threadLiveInterval = window.setInterval(async () => {
+      if (!openedThreadNoteId || String(openedThreadNoteId) !== String(threadNoteId)) return;
+      if (editingThreadItemIndex !== null) return;
+      if (threadNoteInput?.dataset?.mode === 'edit') return;
+
+      const { data, error } = await sb
+        .from('notes')
+        .select('id, answer, text, date, is_task, completed, is_question')
+        .eq('id', threadNoteId)
+        .maybeSingle();
+      if (error || !data) return;
+      if (data.answer === threadLastPayloadHash) return;
+
+      threadLastPayloadHash = data.answer;
+      const idx = currentNotes.findIndex((n) => String(n.id) === String(threadNoteId));
+      if (idx >= 0) currentNotes[idx].answer = data.answer;
+
+      const payload = parseThreadPayload(data);
+      if (payload) {
+        renderThreadSheetFeed(data, payload);
+      }
+    }, 5000);
+  }
+
+  function stopThreadLiveSync() {
+    if (threadLiveInterval) {
+      clearInterval(threadLiveInterval);
+      threadLiveInterval = null;
+    }
+    threadLastPayloadHash = null;
+  }
+
   async function saveDayPositions(orderedIds, draggedNoteId) {
     const updates = [];
     for (let i = 0; i < orderedIds.length; i++) {
@@ -1631,10 +1678,39 @@
     await loadNotes();
   }
 
+  function isThreadSharePopoverOpen() {
+    return !!threadSharePopover?.classList.contains('is-open');
+  }
+
+  function closeThreadSharePopover() {
+    if (!threadSharePopover || !threadShareTrigger) return;
+    threadSharePopover.classList.remove('is-open');
+    threadSharePopover.setAttribute('aria-hidden', 'true');
+    threadShareTrigger.classList.remove('is-open');
+    threadShareTrigger.setAttribute('aria-expanded', 'false');
+  }
+
+  function openThreadSharePopover() {
+    if (!threadSharePopover || !threadShareTrigger || !openedThreadNoteId) return;
+    threadSharePopover.classList.add('is-open');
+    threadSharePopover.setAttribute('aria-hidden', 'false');
+    threadShareTrigger.classList.add('is-open');
+    threadShareTrigger.setAttribute('aria-expanded', 'true');
+  }
+
+  function toggleThreadSharePopover() {
+    if (isThreadSharePopoverOpen()) {
+      closeThreadSharePopover();
+    } else {
+      openThreadSharePopover();
+    }
+  }
+
   function closeThreadSheet() {
     openedThreadNoteId = null;
     editingThreadItemIndex = null;
     editingThreadOriginalText = '';
+    closeThreadSharePopover();
 
     // restore title element if it was replaced by edit input
     const titleHost = threadSheet?.querySelector('.thread-sheet-head-main');
@@ -1662,6 +1738,7 @@
       threadNoteInput.dataset.mode = 'create';
     }
     if (threadSendBtn) threadSendBtn.disabled = true;
+    stopThreadLiveSync();
   }
 
   const THREAD_SHEET_CLOSE_DISTANCE = 120;
@@ -1738,6 +1815,21 @@
 
   function escAttr(v) {
     return (v ?? '').toString().replace(/"/g, '&quot;');
+  }
+
+  function genPublicId() {
+    if (window.crypto?.getRandomValues) {
+      const bytes = new Uint8Array(8);
+      window.crypto.getRandomValues(bytes);
+      return Array.from(bytes).map((b) => b.toString(16).padStart(2, '0')).join('');
+    }
+    return Math.random().toString(36).slice(2, 10);
+  }
+
+  function getPublicLink(noteId, payload) {
+    const pid = payload?.public_id;
+    if (!pid) return '';
+    return `${window.location.origin}/thread.html?thread=${encodeURIComponent(noteId)}&key=${encodeURIComponent(pid)}`;
   }
 
   function deleteIconSvg(stroke = 'currentColor') {
@@ -1890,6 +1982,85 @@
     input.addEventListener('blur', () => finish(true));
   }
 
+  function updateThreadShareUi(note, payload) {
+    if (!threadSharePopover || !threadPublicToggle || !threadShareBtn || !threadShareTrigger) return;
+    if (!note || !payload) {
+      threadShareTrigger.style.display = 'none';
+      closeThreadSharePopover();
+      if (threadShareHint) threadShareHint.style.display = 'none';
+      return;
+    }
+
+    threadShareTrigger.style.display = '';
+    const isPublic = !!payload.public_enabled;
+    threadShareBtn.textContent = 'Copy link';
+    threadSharePopover.setAttribute('aria-hidden', isThreadSharePopoverOpen() ? 'false' : 'true');
+    threadPublicToggle.classList.toggle('is-on', isPublic);
+    threadPublicToggle.setAttribute('aria-checked', isPublic ? 'true' : 'false');
+
+    if (isPublic) {
+      threadShareBtn.classList.remove('is-disabled');
+      threadShareBtn.disabled = false;
+      if (threadShareHint) threadShareHint.style.display = '';
+    } else {
+      threadShareBtn.classList.add('is-disabled');
+      threadShareBtn.disabled = true;
+      if (threadShareHint) threadShareHint.style.display = '';
+    }
+
+    if (threadShareHint) {
+      threadShareHint.textContent = isPublic
+        ? 'Anyone with the link can view and add notes.'
+        : 'Enable public access to copy a link.';
+    }
+
+    threadPublicToggle.onclick = async () => {
+      const next = !payload.public_enabled;
+      await setThreadPublic(note.id, next);
+    };
+
+    threadShareBtn.onclick = async () => {
+      if (!payload.public_enabled || !payload.public_id) return;
+      const link = getPublicLink(note.id, payload);
+      try {
+        await navigator.clipboard.writeText(link);
+        threadShareBtn.textContent = 'Copied';
+        setTimeout(() => { threadShareBtn.textContent = 'Copy link'; }, 1200);
+      } catch (_) {
+        threadShareBtn.textContent = 'Copy failed';
+        setTimeout(() => { threadShareBtn.textContent = 'Copy link'; }, 1200);
+      }
+    };
+  }
+
+  async function setThreadPublic(noteId, enabled) {
+    const noteIdx = currentNotes.findIndex((n) => String(n.id) === String(noteId));
+    if (noteIdx < 0) return;
+    const note = currentNotes[noteIdx];
+    const payload = parseThreadPayload(note);
+    if (!payload) return;
+
+    const nextPayload = { ...payload, public_enabled: !!enabled };
+    if (enabled && !payload.public_id) {
+      nextPayload.public_id = genPublicId();
+    }
+
+    const serialized = JSON.stringify(nextPayload);
+    const { error } = await sb
+      .from('notes')
+      .update({ answer: serialized })
+      .eq('id', noteId)
+      .eq('user_id', user.id);
+
+    if (error) {
+      alert('Failed to update public access: ' + error.message);
+      return;
+    }
+
+    currentNotes[noteIdx].answer = serialized;
+    renderThreadSheetFeed(note, nextPayload);
+  }
+
   function renderThreadSheetFeed(note, payload) {
     const items = safeThreadItems(payload);
     threadSheetTitle.textContent = payload.title || 'Thread';
@@ -1899,6 +2070,8 @@
     // click on title → edit
     threadSheetTitle.onclick = () => startEditThreadTitle(note, payload);
     threadSheetList.innerHTML = '';
+
+    updateThreadShareUi(note, payload);
 
     if (!items.length) {
       const empty = document.createElement('div');
@@ -2180,6 +2353,7 @@
     openedThreadNoteId = note.id;
     editingThreadItemIndex = null;
     editingThreadOriginalText = '';
+    closeThreadSharePopover();
     renderThreadSheetFeed(note, payload);
 
     // reset thread composer
@@ -2202,6 +2376,7 @@
     threadSheet.classList.add('is-open');
     threadSheet.setAttribute('aria-hidden', 'false');
     document.body.classList.add('thread-sheet-open');
+    startThreadLiveSync(note.id);
   }
 
   async function createThreadFromSelection() {
@@ -3118,10 +3293,28 @@
 
   threadSheetOverlay?.addEventListener('click', closeThreadSheet);
   threadSheetCloseBtn?.addEventListener('click', closeThreadSheet);
+  threadShareTrigger?.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!openedThreadNoteId) return;
+    const note = currentNotes.find((n) => String(n.id) === String(openedThreadNoteId));
+    const payload = note ? parseThreadPayload(note) : null;
+    if (!note || !payload) return;
+    updateThreadShareUi(note, payload);
+    toggleThreadSharePopover();
+  });
   threadSheetHandle?.addEventListener('pointerdown', startThreadSheetDrag);
   threadSheetHandle?.addEventListener('pointermove', updateThreadSheetDrag);
   threadSheetHandle?.addEventListener('pointerup', endThreadSheetDrag);
   threadSheetHandle?.addEventListener('pointercancel', endThreadSheetDrag);
+
+  document.addEventListener('pointerdown', (e) => {
+    if (!isThreadSharePopoverOpen()) return;
+    const target = e.target;
+    if (target?.closest?.('#thread-share-popover')) return;
+    if (target?.closest?.('#thread-share-trigger')) return;
+    closeThreadSharePopover();
+  });
 
   // thread composer — auto-resize textarea like main feed
   threadNoteInput?.addEventListener('input', () => {

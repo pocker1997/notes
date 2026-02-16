@@ -99,12 +99,32 @@
           <div id="thread-sheet-title" class="thread-sheet-title">Thread</div>
           <div id="thread-sheet-subtitle" class="thread-sheet-subtitle"></div>
         </div>
-        <button id="thread-sheet-close" class="thread-sheet-close" type="button" aria-label="Close thread">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M18 6L6 18"></path>
-            <path d="M6 6l12 12"></path>
-          </svg>
-        </button>
+        <div class="thread-sheet-head-actions">
+          <button id="thread-share-trigger" class="thread-share-trigger" type="button" aria-haspopup="dialog" aria-expanded="false">
+            Share
+          </button>
+          <button id="thread-sheet-close" class="thread-sheet-close" type="button" aria-label="Close thread">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M18 6L6 18"></path>
+              <path d="M6 6l12 12"></path>
+            </svg>
+          </button>
+        </div>
+        <div id="thread-share-popover" class="thread-share-popover" aria-hidden="true">
+          <div class="thread-share-popover-row">
+            <span class="thread-share-toggle-label">Public access</span>
+            <button
+              id="thread-public-toggle"
+              class="thread-share-toggle"
+              type="button"
+              role="switch"
+              aria-checked="false"
+              aria-label="Toggle public access"
+            ></button>
+          </div>
+          <button id="thread-share-btn" class="thread-share-popover-action" type="button">Copy link</button>
+          <span id="thread-share-hint" class="thread-share-hint">Enable public access to copy link.</span>
+        </div>
       </div>
       <div id="thread-sheet-list" class="thread-sheet-list"></div>
       <div class="thread-composer">

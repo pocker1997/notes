@@ -1158,7 +1158,176 @@ body.thread-sheet-open{
   flex: 1 1 auto;
   width: min(624px, 100%);
   margin: 0 auto;
-  padding-right: 40px;
+  padding-right: 112px;
+}
+
+.thread-sheet-head-actions{
+  position: absolute;
+  top: 0;
+  right: 16px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.thread-share-trigger{
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  color: #6b7280;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 150ms ease-out, border-color 150ms ease-out, background-color 150ms ease-out, transform 150ms ease-out;
+}
+.thread-share-trigger:hover{
+  color: #374151;
+  background: #f9fafb;
+}
+.thread-share-trigger:active{
+  transform: scale(0.97);
+}
+.thread-share-trigger.is-open{
+  color: #ef4444;
+  border-color: rgba(239, 68, 68, 0.4);
+  background: rgba(239, 68, 68, 0.06);
+}
+.thread-share-trigger:focus-visible{
+  outline: 2px solid rgba(239, 68, 68, 0.35);
+  outline-offset: 2px;
+}
+
+.thread-share-popover{
+  position: absolute;
+  right: 16px;
+  top: 38px;
+  width: min(250px, calc(100vw - 40px));
+  padding: 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 14px 30px -18px rgba(15, 23, 42, 0.45), 0 8px 16px -12px rgba(15, 23, 42, 0.25);
+  opacity: 0;
+  transform: translateY(-4px) scale(0.98);
+  transform-origin: top right;
+  pointer-events: none;
+  transition: opacity 140ms ease-out, transform 180ms cubic-bezier(0.32, 0.72, 0, 1);
+  z-index: 2;
+}
+.thread-share-popover.is-open{
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  pointer-events: auto;
+}
+
+.thread-share-popover-row{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 4px 2px 8px 2px;
+}
+
+.thread-share-toggle-label{
+  font-size: 11px;
+  font-weight: 600;
+  color: #6b7280;
+}
+
+.thread-share-toggle{
+  border: 0;
+  background: #d1d5db;
+  height: 18px;
+  width: 32px;
+  padding: 0;
+  border-radius: 999px;
+  color: transparent;
+  position: relative;
+  cursor: pointer;
+  transition: background-color 180ms ease-out, box-shadow 180ms ease-out, transform 150ms ease-out;
+}
+.thread-share-toggle::after{
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.25);
+  transition: transform 180ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+.thread-share-toggle:active{
+  transform: scale(0.97);
+}
+.thread-share-toggle.is-on{
+  background: linear-gradient(135deg, #f87171, #ef4444);
+  box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.12);
+}
+.thread-share-toggle.is-on::after{
+  transform: translateX(14px);
+}
+.thread-share-toggle:focus-visible{
+  outline: 2px solid rgba(239, 68, 68, 0.35);
+  outline-offset: 2px;
+}
+
+.thread-share-popover-action{
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  color: #6b7280;
+  height: 30px;
+  width: 100%;
+  padding: 0 10px;
+  border-radius: 9px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+  transition: color 150ms ease-out, border-color 150ms ease-out, background-color 150ms ease-out, transform 150ms ease-out;
+  margin-top: 6px;
+}
+.thread-share-popover-action:hover{
+  color: #374151;
+  background: #f9fafb;
+}
+.thread-share-popover-action:active{
+  transform: scale(0.97);
+}
+.thread-share-popover-action.is-disabled{
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.thread-share-hint{
+  display: block;
+  margin-top: 8px;
+  font-size: 11px;
+  color: #9ca3af;
+  line-height: 1.35;
+}
+
+body.public-thread .thread-sheet-head-main{
+  padding-right: 0;
+  padding-top: 8px;
+}
+
+@media (max-width: 640px){
+  .thread-sheet-head-main{
+    padding-right: 0;
+  }
+  .thread-sheet-head-actions{
+    position: static;
+    justify-content: flex-end;
+    margin-top: 10px;
+  }
+  .thread-share-popover{
+    right: 16px;
+    top: 76px;
+  }
 }
 
 .thread-sheet-title{
@@ -1192,7 +1361,7 @@ body.thread-sheet-open{
 }
 
 .thread-sheet-subtitle{
-  margin-top: 4px;
+  margin-top: 0;
   font-size: 12px;
   color: #6b7280;
 }
@@ -1208,9 +1377,7 @@ body.thread-sheet-open{
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  position: absolute;
-  right: 16px;
-  top: 0;
+  position: static;
   transition: color 150ms ease-out, background-color 150ms ease-out, transform 150ms ease-out;
 }
 .thread-sheet-close:hover{
