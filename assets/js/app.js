@@ -1516,6 +1516,14 @@
 
     if (!payload) return;
 
+    // Optimistic UI: remove note from feed and refresh view immediately.
+    currentNotes = currentNotes.filter((n) => String(n.id) !== String(note.id));
+    selectedNoteIds.delete(note.id);
+    movedNoteIds.delete(String(note.id));
+    persistMovedIds();
+    clearTaskCompletedAt(note.id);
+    renderCurrentView({ preserveScroll: true });
+
     const { error } = await sb
       .from('notes')
       .delete()
