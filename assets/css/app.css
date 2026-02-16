@@ -812,6 +812,21 @@ body.is-multi-select .note-del{
   white-space: nowrap;
 }
 
+.note-row.thread-drop-target .thread-stack .thread-card:first-child{
+  border-color: rgba(239, 68, 68, 0.8);
+  box-shadow: 0 10px 24px rgba(239, 68, 68, 0.2);
+}
+.note-row.thread-drop-target .thread-count-pill{
+  background: #ef4444;
+  color: #fff;
+  border-color: #ef4444;
+}
+
+.note-row.thread-drop-accept .thread-stack .thread-card:first-child{
+  box-shadow: 0 14px 30px rgba(239, 68, 68, 0.26);
+  transform: translateY(-1px);
+}
+
 .note-row.thread-merging{
   animation: threadMergeOut 200ms cubic-bezier(.2,.8,.25,1) forwards;
   pointer-events: none;

@@ -41,6 +41,60 @@
 
   const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
+  // === task completion tracking (local) ===
+  const TASK_COMPLETED_KEY = 'task_completed_at_v1';
+  const taskCompletedAt = new Map();
+
+  function loadTaskCompletedMap() {
+    try {
+      const raw = localStorage.getItem(TASK_COMPLETED_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object') return;
+      for (const [key, value] of Object.entries(parsed)) {
+        if (value) taskCompletedAt.set(String(key), String(value));
+      }
+    } catch (_) {}
+  }
+
+  function persistTaskCompletedMap() {
+    try {
+      const obj = Object.fromEntries(taskCompletedAt.entries());
+      localStorage.setItem(TASK_COMPLETED_KEY, JSON.stringify(obj));
+    } catch (_) {}
+  }
+
+  function setTaskCompletedAt(noteId, iso) {
+    if (!noteId || !iso) return;
+    taskCompletedAt.set(String(noteId), String(iso));
+    persistTaskCompletedMap();
+  }
+
+  function clearTaskCompletedAt(noteId) {
+    if (!noteId) return;
+    const deleted = taskCompletedAt.delete(String(noteId));
+    if (deleted) persistTaskCompletedMap();
+  }
+
+  function getTaskCompletedAt(noteId) {
+    if (!noteId) return null;
+    return taskCompletedAt.get(String(noteId)) || null;
+  }
+
+  function syncTaskCompletionMap(rawNotes) {
+    const ids = new Set(rawNotes.map((n) => String(n.id)));
+    let changed = false;
+    for (const id of taskCompletedAt.keys()) {
+      if (!ids.has(id)) {
+        taskCompletedAt.delete(id);
+        changed = true;
+      }
+    }
+    if (changed) persistTaskCompletedMap();
+  }
+
+  loadTaskCompletedMap();
+
   function todayKey() {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -129,13 +183,23 @@
     return cutoff;
   }
 
-  function getReviewTasks(notes) {
-    const cutoff = getReviewCutoff();
-    return notes.filter(n => {
-      if (!n.is_task || n.completed || isThreadNote(n)) return false;
-      const d = new Date(n.date);
-      return d < cutoff;
+  function isTaskNote(note) {
+    if (!note) return false;
+    const taskInfo = parseTask(note.text);
+    return !!(note.is_task || taskInfo.isTask);
+  }
+
+  function getOpenTaskNotes(notes) {
+    return notes.filter((n) => {
+      if (!isTaskNote(n)) return false;
+      if (n.completed) return false;
+      if (isThreadNote(n)) return false;
+      return true;
     });
+  }
+
+  function getReviewTasks(notes) {
+    return getOpenTaskNotes(notes);
   }
 
   function isReviewDone() {
@@ -252,19 +316,17 @@
     reviewTimerInterval = setInterval(tick, 1000);
   }
 
-  function getYesterdayStats(notes) {
+  function getReviewStats(notes) {
+    const open = getOpenTaskNotes(notes).length;
     const yesterday = prevDay(todayKey());
-    let created = 0;
-    let completed = 0;
+    let completedYesterday = 0;
     for (const n of notes) {
-      if (!n.is_task || isThreadNote(n)) continue;
-      const dk = dayKey(n.date);
-      if (dk === yesterday) {
-        created++;
-        if (n.completed) completed++;
-      }
+      if (!isTaskNote(n) || isThreadNote(n) || !n.completed) continue;
+      const completedAt = getTaskCompletedAt(n.id);
+      if (!completedAt) continue;
+      if (dayKey(completedAt) === yesterday) completedYesterday++;
     }
-    return { created, completed };
+    return { open, completedYesterday };
   }
 
   function openReviewModal(forceTasks) {
@@ -283,13 +345,13 @@
     reviewSummary.style.display = 'none';
 
     // fill intro stats
-    const stats = getYesterdayStats(forceTasks ? [] : currentNotes);
-    animateCounter(reviewIntroCreated, stats.created, 500);
-    animateCounter(reviewIntroCompleted, stats.completed, 500);
+    const stats = getReviewStats(currentNotes);
+    animateCounter(reviewIntroCreated, stats.open, 500);
+    animateCounter(reviewIntroCompleted, stats.completedYesterday, 500);
 
     const pendingCount = tasks.length;
     const pendingWord = pendingCount === 1 ? 'task' : 'tasks';
-    reviewIntroPending.textContent = `${pendingCount} ${pendingWord} still need review`;
+    reviewIntroPending.textContent = `${pendingCount} ${pendingWord} to review`;
 
     // open modal
     reviewModal.classList.add('is-open');
@@ -1268,7 +1330,6 @@
     if (!dayStr) return;
 
     const dayRows = getDayRows(mountEl, dayStr);
-    if (dayRows.length < 2) return;
 
     const rect = rowEl.getBoundingClientRect();
     const offsetY = clientY - rect.top;
@@ -1303,7 +1364,20 @@
     rowEl.style.display = 'none';
 
     const originalOrder = dayRows.map(r => r.getAttribute('data-note-id'));
-    dragState = { noteId, rowEl, dayStr, dayRows, mountEl, ghost, placeholder, offsetY, moved: false, originalOrder };
+    dragState = {
+      noteId,
+      rowEl,
+      dayStr,
+      dayRows,
+      mountEl,
+      ghost,
+      placeholder,
+      offsetY,
+      moved: false,
+      originalOrder,
+      threadTargetId: null,
+      threadTargetRow: null
+    };
     document.body.classList.add('is-reordering');
 
     if (navigator.vibrate) navigator.vibrate(30);
@@ -1311,6 +1385,17 @@
     document.addEventListener('pointermove', onDragMove);
     document.addEventListener('pointerup', onDragEnd);
     document.addEventListener('pointercancel', onDragEnd);
+  }
+
+  function setThreadDropTarget(row) {
+    if (!dragState) return;
+    if (dragState.threadTargetRow === row) return;
+    if (dragState.threadTargetRow) {
+      dragState.threadTargetRow.classList.remove('thread-drop-target');
+    }
+    dragState.threadTargetRow = row || null;
+    dragState.threadTargetId = row ? row.getAttribute('data-note-id') : null;
+    if (row) row.classList.add('thread-drop-target');
   }
 
   function onDragMove(e) {
@@ -1321,6 +1406,15 @@
 
     // move ghost with pointer
     ghost.style.top = (e.clientY - offsetY) + 'px';
+
+    const hovered = document.elementFromPoint(e.clientX, e.clientY);
+    const threadRow = hovered?.closest?.('.note-row.is-thread-note');
+    if (threadRow && threadRow !== rowEl) {
+      setThreadDropTarget(threadRow);
+      return;
+    } else {
+      setThreadDropTarget(null);
+    }
 
     const y = e.clientY;
 
@@ -1346,7 +1440,7 @@
   function onDragEnd(e) {
     if (!dragState) return;
 
-    const { rowEl, ghost, placeholder, dayStr, mountEl, noteId, moved } = dragState;
+    const { rowEl, ghost, placeholder, dayStr, mountEl, noteId, moved, threadTargetId, threadTargetRow } = dragState;
 
     // remove ghost
     ghost.remove();
@@ -1360,6 +1454,29 @@
     document.removeEventListener('pointermove', onDragMove);
     document.removeEventListener('pointerup', onDragEnd);
     document.removeEventListener('pointercancel', onDragEnd);
+
+    if (threadTargetRow) {
+      threadTargetRow.classList.remove('thread-drop-target');
+    }
+
+    if (threadTargetId && threadTargetRow) {
+      threadTargetRow.classList.add('thread-drop-accept');
+      rowEl.classList.add('thread-merging');
+
+      const finish = async () => {
+        threadTargetRow.classList.remove('thread-drop-accept');
+        await moveNoteIntoThread(noteId, threadTargetId);
+      };
+
+      if (reduceMotion) {
+        finish();
+      } else {
+        window.setTimeout(finish, 220);
+      }
+
+      dragState = null;
+      return;
+    }
 
     // collect new order and check if it actually changed
     const newDayRows = getDayRows(mountEl, dayStr);
@@ -1378,6 +1495,42 @@
     saveDayPositions(orderedIds, noteId);
 
     dragState = null;
+  }
+
+  async function moveNoteIntoThread(noteId, threadNoteId) {
+    const note = currentNotes.find((n) => String(n.id) === String(noteId));
+    if (!note) return;
+
+    const payload = await mutateThreadPayload(threadNoteId, (items) => {
+      items.push({
+        id: note.id,
+        text: note.text ?? '',
+        date: note.date,
+        is_task: !!note.is_task,
+        completed: !!note.completed,
+        is_question: !!note.is_question,
+        answer: note.answer ?? null
+      });
+      return items;
+    });
+
+    if (!payload) return;
+
+    const { error } = await sb
+      .from('notes')
+      .delete()
+      .eq('id', note.id)
+      .eq('user_id', user.id);
+
+    if (error) {
+      alert('Note was added to the thread, but failed to remove from feed: ' + error.message);
+    }
+
+    if (openedThreadNoteId && String(openedThreadNoteId) === String(threadNoteId)) {
+      renderThreadSheetFeed(payload.note, payload.payload);
+    }
+
+    await loadNotes();
   }
 
   async function saveDayPositions(orderedIds, draggedNoteId) {
@@ -1615,6 +1768,41 @@
       .from('notes')
       .update({ answer: serialized })
       .eq('id', openedThreadNoteId)
+      .eq('user_id', user.id);
+
+    if (error) {
+      alert('Failed to update thread: ' + error.message);
+      return null;
+    }
+
+    currentNotes[noteIdx].answer = serialized;
+    return { note: currentNotes[noteIdx], payload: nextPayload };
+  }
+
+  async function mutateThreadPayload(threadNoteId, mutator) {
+    if (!threadNoteId) return null;
+
+    const noteIdx = currentNotes.findIndex((n) => String(n.id) === String(threadNoteId));
+    if (noteIdx < 0) return null;
+
+    const note = currentNotes[noteIdx];
+    const payload = parseThreadPayload(note);
+    if (!payload) return null;
+
+    const sourceItems = safeThreadItems(payload);
+    const nextItems = mutator(sourceItems.map((item) => ({ ...item })));
+    if (!Array.isArray(nextItems)) return null;
+
+    const nextPayload = {
+      ...payload,
+      items: nextItems
+    };
+
+    const serialized = JSON.stringify(nextPayload);
+    const { error } = await sb
+      .from('notes')
+      .update({ answer: serialized })
+      .eq('id', threadNoteId)
       .eq('user_id', user.id);
 
     if (error) {
@@ -2086,6 +2274,11 @@
     if (error) {
       alert('Failed to update task: ' + error.message);
       return false;
+    }
+    if (nextCompleted) {
+      setTaskCompletedAt(noteId, new Date().toISOString());
+    } else {
+      clearTaskCompletedAt(noteId);
     }
     return true;
   }
@@ -2758,6 +2951,7 @@
 
     // sync review markers from Supabase → localStorage (cross-device)
     syncReviewMarkers(rawNotes);
+    syncTaskCompletionMap(rawNotes);
 
     const hiddenIds = collectThreadMemberIds(rawNotes);
     currentNotes = rawNotes.filter((note) => {
@@ -2818,6 +3012,10 @@
         alert('Save error: ' + error.message);
         sendButton.disabled = false;
         return;
+      }
+
+      if (!nextIsTask) {
+        clearTaskCompletedAt(noteId);
       }
 
       exitEdit({ restoreInput: true });
