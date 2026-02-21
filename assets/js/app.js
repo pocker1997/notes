@@ -5,7 +5,7 @@
   // 1) Auth gate
   const { data: { session } } = await sb.auth.getSession();
   if (!session) {
-    window.location.href = '/login.html';
+    window.location.href = '/landing.html';
     return;
   }
 
@@ -87,7 +87,16 @@
   }
 
   function syncTaskCompletionMap(rawNotes) {
+    // Collect all known IDs: root notes + thread item IDs
     const ids = new Set(rawNotes.map((n) => String(n.id)));
+    for (const n of rawNotes) {
+      if (!isThreadNote(n)) continue;
+      const payload = parseThreadPayload(n);
+      if (!payload) continue;
+      for (const item of safeThreadItems(payload)) {
+        if (item.id != null) ids.add(String(item.id));
+      }
+    }
     let changed = false;
     for (const id of taskCompletedAt.keys()) {
       if (!ids.has(id)) {
@@ -179,6 +188,7 @@
   let reviewSwiping = false;
   let reviewTimerInterval = null;
   let reviewForceShow = false;
+  let reviewBannerShownThisSession = false;
   let reviewHintInterval = null;
 
   function getReviewCutoff() {
@@ -203,8 +213,50 @@
     });
   }
 
+  /**
+   * Collect all open tasks for review: root-level tasks + tasks inside threads.
+   * Each returned object has { id, text, date, is_task, completed, _threadNoteId?, _threadItemIndex? }
+   * so that review swipe actions know how to toggle completion.
+   */
   function getReviewTasks(notes) {
-    return getOpenTaskNotes(notes);
+    const tasks = [];
+
+    for (const n of notes) {
+      if (isThreadNote(n)) {
+        // collect open tasks from thread items
+        const payload = parseThreadPayload(n);
+        if (!payload) continue;
+        const items = safeThreadItems(payload);
+        for (let i = 0; i < items.length; i++) {
+          const item = items[i];
+          if (item.is_task && !item.completed) {
+            tasks.push({
+              id: item.id,
+              text: item.text,
+              date: item.date,
+              is_task: true,
+              completed: false,
+              _threadNoteId: n.id,
+              _threadItemIndex: i
+            });
+          }
+        }
+      } else {
+        // root-level task
+        if (!isTaskNote(n) || n.completed) continue;
+        tasks.push({
+          id: n.id,
+          text: n.text,
+          date: n.date,
+          is_task: true,
+          completed: false,
+          _threadNoteId: null,
+          _threadItemIndex: null
+        });
+      }
+    }
+
+    return tasks;
   }
 
   function isReviewDone() {
@@ -213,7 +265,7 @@
 
   async function markReviewDone() {
     const key = todayKey();
-    localStorage.setItem(`review_done_${key}`, '1');
+    localStorage.setItem(`review_done_${key}`, new Date().toISOString());
 
     // persist to Supabase so it syncs across devices
     // first check if marker already exists to avoid duplicates
@@ -244,7 +296,8 @@
     for (const n of rawNotes) {
       if (!isReviewMarkerNote(n)) continue;
       const dateStr = n.text.replace(REVIEW_MARKER, '');
-      if (dateStr) localStorage.setItem(`review_done_${dateStr}`, '1');
+      // Store the exact timestamp from the marker note (n.date) for precise stats
+      if (dateStr) localStorage.setItem(`review_done_${dateStr}`, n.date || '1');
     }
   }
 
@@ -255,8 +308,11 @@
     // no tasks and not done → no banner
     if (!tasks.length && !done) return null;
 
-    // only show after 8:00 AM (unless forced via debug)
-    if (!reviewForceShow && new Date().getHours() < 8) return null;
+    // only show after 8:00 AM (unless forced via debug, or already shown this session)
+    if (!reviewForceShow && !reviewBannerShownThisSession && new Date().getHours() < 8) return null;
+
+    // mark as shown so subsequent renders (e.g. after drag) keep the banner visible
+    reviewBannerShownThisSession = true;
 
     const banner = document.createElement('button');
     banner.type = 'button';
@@ -271,7 +327,7 @@
           </svg>
         </div>
         <div class="review-banner-body">
-          <div class="review-banner-title">Yesterday review</div>
+          <div class="review-banner-title">Task review</div>
           <div class="review-banner-sub">${tasks.length} ${tasks.length === 1 ? 'task' : 'tasks'} waiting</div>
         </div>
         <div class="review-banner-arrow">
@@ -322,16 +378,51 @@
   }
 
   function getReviewStats(notes) {
-    const open = getOpenTaskNotes(notes).length;
-    const yesterday = prevDay(todayKey());
-    let completedYesterday = 0;
-    for (const n of notes) {
-      if (!isTaskNote(n) || isThreadNote(n) || !n.completed) continue;
-      const completedAt = getTaskCompletedAt(n.id);
-      if (!completedAt) continue;
-      if (dayKey(completedAt) === yesterday) completedYesterday++;
+    // open = all open tasks including inside threads
+    const open = getReviewTasks(notes).length;
+
+    // Find last review ISO timestamp from localStorage
+    // Values are either ISO strings (new) or '1' (legacy)
+    let lastReviewISO = null;
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (!k || !k.startsWith('review_done_')) continue;
+      const val = localStorage.getItem(k);
+      // ISO string starts with a digit (2025-…), legacy '1' is just a flag
+      if (val && val.length > 4) {
+        if (!lastReviewISO || val > lastReviewISO) lastReviewISO = val;
+      } else {
+        // legacy '1' — use the day key as a rough fallback (end of that day)
+        const d = k.replace('review_done_', '') + 'T23:59:59Z';
+        if (!lastReviewISO || d > lastReviewISO) lastReviewISO = d;
+      }
     }
-    return { open, completedYesterday };
+
+    // Count tasks completed since last review (or all time if no prior review)
+    // Includes both root-level tasks and tasks inside threads
+    let completedSinceReview = 0;
+
+    for (const n of notes) {
+      if (isThreadNote(n)) {
+        // count completed tasks inside threads
+        const payload = parseThreadPayload(n);
+        if (!payload) continue;
+        for (const item of safeThreadItems(payload)) {
+          if (!item.is_task || !item.completed) continue;
+          const completedAt = item.id ? getTaskCompletedAt(item.id) : null;
+          if (!completedAt) continue;
+          if (!lastReviewISO || completedAt > lastReviewISO) completedSinceReview++;
+        }
+      } else {
+        // root-level completed task
+        if (!isTaskNote(n) || !n.completed) continue;
+        const completedAt = getTaskCompletedAt(n.id);
+        if (!completedAt) continue;
+        if (!lastReviewISO || completedAt > lastReviewISO) completedSinceReview++;
+      }
+    }
+
+    return { open, completedSinceReview };
   }
 
   function openReviewModal(forceTasks) {
@@ -352,7 +443,7 @@
     // fill intro stats
     const stats = getReviewStats(currentNotes);
     animateCounter(reviewIntroCreated, stats.open, 500);
-    animateCounter(reviewIntroCompleted, stats.completedYesterday, 500);
+    animateCounter(reviewIntroCompleted, stats.completedSinceReview, 500);
 
     const pendingCount = tasks.length;
     const pendingWord = pendingCount === 1 ? 'task' : 'tasks';
@@ -438,7 +529,17 @@
 
     if (direction === 'right') {
       reviewDoneCount++;
-      await toggleTaskCompleted(task.id, true);
+      if (task._threadNoteId != null) {
+        // task lives inside a thread — mutate the thread JSON payload
+        await mutateThreadPayload(task._threadNoteId, (items) => {
+          const idx = task._threadItemIndex;
+          if (items[idx]) items[idx].completed = true;
+          return items;
+        });
+        if (task.id) setTaskCompletedAt(task.id, new Date().toISOString());
+      } else {
+        await toggleTaskCompleted(task.id, true);
+      }
       reviewCard.classList.add('exit-right');
     } else {
       reviewSkippedCount++;
@@ -1876,6 +1977,8 @@
     }
 
     currentNotes[noteIdx].answer = serialized;
+    // Refresh main feed so thread count pill + preview update without page reload
+    renderCurrentView({ preserveScroll: true });
     return { note: currentNotes[noteIdx], payload: nextPayload };
   }
 
@@ -2190,6 +2293,11 @@
             return list;
           });
           if (!changed) return;
+          // track completion timestamp for review stats
+          if (item.id) {
+            if (next) setTaskCompletedAt(item.id, new Date().toISOString());
+            else clearTaskCompletedAt(item.id);
+          }
           renderCurrentView({ preserveScroll: true });
           renderThreadSheetFeed(changed.note, changed.payload);
         });
@@ -2288,7 +2396,7 @@
           try { input.setSelectionRange(input.value.length, input.value.length); } catch (_) {}
         };
 
-        input.addEventListener('dblclick', (e) => {
+        input.addEventListener('click', (e) => {
           e.preventDefault();
           e.stopPropagation();
           enterAnswerEdit();
@@ -2631,21 +2739,31 @@
 
     mountEl.innerHTML = '';
 
-    // prepare review banner (only in main feed view)
-    const reviewBannerEl = (mountEl === notesContainer && viewMode === 'feed')
+    // prepare review banner (only in main feed view AND when user has notes)
+    const hasAnyNotes = notes.length > 0;
+    const reviewBannerEl = (mountEl === notesContainer && viewMode === 'feed' && hasAnyNotes)
       ? renderReviewBanner()
       : null;
     let reviewBannerInserted = false;
 
+    // Info button: show when user has notes, hide when empty
+    const infoBtn = document.getElementById('infoBtn');
+    if (infoBtn) infoBtn.style.display = hasAnyNotes ? '' : 'none';
+
     if (!displayNotes.length) {
-      // no notes — still show review banner if exists
+      // no notes — show onboarding tips as empty state
       if (reviewBannerEl) {
         mountEl.appendChild(reviewBannerEl);
       } else {
         mountEl.innerHTML = `
-          <div class="empty-state">
-            <div class="empty-text">No notes yet.</div>
-            <div class="empty-hint">Write your first note below.</div>
+          <div class="empty-state empty-tips">
+            <div class="empty-tips-title">Quick tips</div>
+            <ul class="empty-tips-list">
+              <li><strong>[] Buy milk</strong> — square brackets at the start create a task with a checkbox</li>
+              <li><strong>What to cook?</strong> — a question mark turns the note into a question with an answer field</li>
+              <li><strong>⌘ / Shift + tap</strong> — select multiple notes, then tap "Create thread" to group them</li>
+              <li><strong>Double-tap a note</strong> — opens it for editing in the composer below</li>
+            </ul>
           </div>
         `;
       }
@@ -2990,7 +3108,7 @@
           }
         };
 
-        // enter edit on dblclick/double tap
+        // enter edit on single click/tap
         const enterAnswerEdit = () => {
           if (editingNoteId) return;
           setAnswerEditing(true);
@@ -2998,12 +3116,11 @@
           try { input.setSelectionRange(input.value.length, input.value.length); } catch (_) {}
         };
 
-        input.addEventListener('dblclick', (e) => {
+        input.addEventListener('click', (e) => {
           e.preventDefault();
           e.stopPropagation();
           enterAnswerEdit();
         });
-        attachDoubleTap(input, () => enterAnswerEdit());
 
         input.addEventListener('pointerdown', (e) => {
           // stop bubbling so note edit won't trigger
@@ -3281,6 +3398,47 @@
   viewPlanningBtn?.addEventListener('click', () => {
     alert('Planning will be added in the next update.');
   });
+
+  // ─── Info button (quick tips popover) ───
+  const infoBtn = document.getElementById('infoBtn');
+  let infoPopoverOpen = false;
+  if (infoBtn) {
+    infoBtn.addEventListener('click', () => {
+      let popover = document.getElementById('info-popover');
+      if (popover) {
+        popover.remove();
+        infoPopoverOpen = false;
+        infoBtn.classList.remove('is-active');
+        return;
+      }
+      infoPopoverOpen = true;
+      infoBtn.classList.add('is-active');
+      popover = document.createElement('div');
+      popover.id = 'info-popover';
+      popover.className = 'info-popover';
+      popover.innerHTML = `
+        <div class="info-popover-title">Quick tips</div>
+        <ul class="info-popover-list">
+          <li><strong>[] Buy milk</strong> — square brackets at the start create a task with a checkbox</li>
+          <li><strong>What to cook?</strong> — a question mark turns the note into a question with an answer field</li>
+          <li><strong>⌘ / Shift + tap</strong> — select multiple notes, then tap "Create thread" to group them</li>
+          <li><strong>Double-tap a note</strong> — opens it for editing in the composer below</li>
+        </ul>
+      `;
+      document.querySelector('.topbar').appendChild(popover);
+      requestAnimationFrame(() => popover.classList.add('is-open'));
+
+      // Close on click outside
+      const closeInfo = (e) => {
+        if (!popover.contains(e.target) && e.target !== infoBtn && !infoBtn.contains(e.target)) {
+          popover.classList.remove('is-open');
+          setTimeout(() => { popover.remove(); infoPopoverOpen = false; infoBtn.classList.remove('is-active'); }, 180);
+          document.removeEventListener('click', closeInfo);
+        }
+      };
+      setTimeout(() => document.addEventListener('click', closeInfo), 10);
+    });
+  }
   viewModeToggle?.addEventListener('click', (e) => {
     const targetBtn = e.target.closest('[data-view-mode]');
     if (!targetBtn) return;
@@ -3421,7 +3579,7 @@
 
   logoutBtn.addEventListener('click', async () => {
     await sb.auth.signOut();
-    window.location.href = '/login.html';
+    window.location.href = '/landing.html';
   });
 
   syncComposerOffset();

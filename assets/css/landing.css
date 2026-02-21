@@ -1,0 +1,117 @@
+/* ═══════════════════════════════════════════
+   Dumka — Landing page
+   One screen. Gravity particles. Minimal.
+   ═══════════════════════════════════════════ */
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  height: 100dvh;
+  overflow: hidden;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: #fafafa;
+  color: #111;
+  -webkit-font-smoothing: antialiased;
+  cursor: default;
+}
+
+/* ─── Canvas ─── */
+#gravity {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+}
+
+/* ─── Content layer ─── */
+.content {
+  position: relative;
+  z-index: 1;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 32px;
+  pointer-events: none; /* let canvas receive pointer events */
+}
+
+/* ─── Title ─── */
+.title {
+  font-size: clamp(40px, 8vw, 64px);
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  color: #111;
+  opacity: 0;
+  animation: titleReveal 1.8s cubic-bezier(0.16, 1, 0.3, 1) 0.3s forwards;
+  user-select: none;
+}
+
+@keyframes titleReveal {
+  0% {
+    opacity: 0;
+    transform: translateY(12px);
+    filter: blur(8px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+
+/* ─── CTA Button ─── */
+.cta {
+  display: inline-block;
+  pointer-events: auto; /* clickable */
+  font-size: 15px;
+  font-weight: 600;
+  color: #fff;
+  background: #ef4444;
+  text-decoration: none;
+  padding: 14px 40px;
+  border-radius: 100px;
+  opacity: 0;
+  animation: ctaReveal 1s cubic-bezier(0.16, 1, 0.3, 1) 1.4s forwards;
+  transition: transform 180ms, box-shadow 180ms;
+}
+
+.cta:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 24px rgba(239, 68, 68, 0.3);
+}
+
+.cta:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 8px rgba(239, 68, 68, 0.2);
+}
+
+@keyframes ctaReveal {
+  0% {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ─── Reduced motion ─── */
+@media (prefers-reduced-motion: reduce) {
+  .title,
+  .cta {
+    animation: none;
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+}

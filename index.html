@@ -44,6 +44,13 @@
       </div>
 
       <div class="topbar-right">
+        <button id="infoBtn" class="top-nav-btn info-btn" type="button" aria-label="Quick tips" style="display:none;">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="10"></circle>
+            <path d="M12 16v-4"></path>
+            <path d="M12 8h.01"></path>
+          </svg>
+        </button>
         <p class="topbar-email" id="userLabel"></p>
         <button id="logoutBtn" class="logout-icon-btn" aria-label="Log out">
           <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -154,9 +161,9 @@
     <div class="review-modal-bg"></div>
 
     <!-- intro stats screen -->
-    <div id="review-intro" class="review-intro" role="dialog" aria-modal="true" aria-label="Yesterday review">
+    <div id="review-intro" class="review-intro" role="dialog" aria-modal="true" aria-label="Task review">
       <div class="review-intro-content">
-        <div class="review-intro-title">Yesterday review</div>
+        <div class="review-intro-title">Task review</div>
         <div class="review-intro-stats">
           <div class="review-intro-stat">
             <span class="review-intro-stat-num" id="review-intro-created">0</span>
@@ -164,7 +171,7 @@
           </div>
           <div class="review-intro-stat">
             <span class="review-intro-stat-num" id="review-intro-completed">0</span>
-            <span class="review-intro-stat-label">completed yesterday</span>
+            <span class="review-intro-stat-label">completed since last review</span>
           </div>
         </div>
         <div id="review-intro-pending" class="review-intro-pending"></div>
@@ -176,7 +183,7 @@
     <!-- swipe cards screen -->
     <div id="review-swipe-screen" class="review-modal-content" style="display:none" role="dialog" aria-modal="true" aria-label="Task review">
       <div class="review-header">
-        <div class="review-title">Yesterday review</div>
+        <div class="review-title">Task review</div>
         <div id="review-progress-text" class="review-progress">1 / 5</div>
       </div>
       <div id="review-card-area" class="review-card-area">
@@ -229,7 +236,7 @@
       </button>
       <div class="changelog-header">What's new</div>
       <ul class="changelog-list">
-        <li><strong>Yesterday review</strong> — each morning at 8:00, review open tasks with Tinder-like swipes</li>
+        <li><strong>Task review</strong> — each morning at 8:00, review open tasks with Tinder-like swipes</li>
         <li><strong>Thread titles</strong> — threads can now be named, and that title appears in the feed</li>
         <li><strong>Notes inside threads</strong> — add new notes directly inside any thread</li>
         <li><strong>Updated UI</strong> — cleaner shadows, one accent system, and reduced-motion support</li>

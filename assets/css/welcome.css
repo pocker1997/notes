@@ -1,0 +1,1098 @@
+/* ═══════════════════════════════════════════
+   Dumka — Welcome / Onboarding v2
+   Realistic notebook + interactive tasks
+   ═══════════════════════════════════════════ */
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  height: 100dvh;
+  overflow: hidden;
+}
+
+body {
+  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: #f5f5f5;
+  color: #111;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ─── Phase container ─── */
+.phase {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 700ms cubic-bezier(0.16, 1, 0.3, 1);
+  overflow-y: auto;
+}
+
+.phase.active {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* ═══════════════════════════════════════════
+   STICKER CURSOR
+   ═══════════════════════════════════════════ */
+
+.sticker-cursor {
+  position: fixed;
+  pointer-events: none;
+  z-index: 9999;
+  width: 44px;
+  height: 44px;
+  transform: translate(-50%, -50%);
+  opacity: 0;
+  transition: opacity 150ms;
+  filter: drop-shadow(0 3px 6px rgba(0,0,0,0.2));
+}
+
+.sticker-cursor.visible {
+  opacity: 1;
+}
+
+body.sticker-mode {
+  cursor: none;
+}
+
+body.sticker-mode .nb-cover {
+  cursor: none;
+}
+
+/* ═══════════════════════════════════════════
+   PHASE 1: NOTEBOOK
+   ═══════════════════════════════════════════ */
+
+.notebook-scene {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 28px;
+  padding: 24px;
+}
+
+/* ─── Notebook ─── */
+.notebook {
+  width: 300px;
+  height: 400px;
+  perspective: 1200px;
+  opacity: 0;
+  transform: translateY(24px) scale(0.96);
+  animation: nbAppear 900ms cubic-bezier(0.16, 1, 0.3, 1) 200ms forwards;
+}
+
+@keyframes nbAppear {
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.nb-wrapper {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transform-style: preserve-3d;
+}
+
+/* Back cover */
+.nb-back {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(145deg, #2a2a2a 0%, #1a1a1a 100%);
+  border-radius: 4px 14px 14px 4px;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.2);
+}
+
+/* Pages */
+.nb-pages {
+  position: absolute;
+  inset: 3px 3px 3px 8px;
+  border-radius: 2px 12px 12px 2px;
+  overflow: hidden;
+}
+
+.nb-page {
+  position: absolute;
+  inset: 0;
+  background: #fff;
+  border-right: 1px solid #e8e8e8;
+}
+
+.nb-page:nth-child(1) { right: 4px; box-shadow: 1px 0 0 #eee; }
+.nb-page:nth-child(2) { right: 2px; box-shadow: 1px 0 0 #f0f0f0; }
+.nb-page:nth-child(3) { right: 0; }
+
+/* Front cover */
+.nb-cover {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(155deg, #2d2d2d 0%, #1c1c1c 40%, #171717 100%);
+  border-radius: 4px 14px 14px 4px;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.06),
+    inset 0 -1px 0 rgba(0,0,0,0.3),
+    0 20px 60px rgba(0, 0, 0, 0.3),
+    0 0 0 1px rgba(0,0,0,0.15);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  transform-origin: left center;
+  transform-style: preserve-3d;
+  transition: transform 1s cubic-bezier(0.4, 0, 0.2, 1);
+  z-index: 2;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  /* Subtle leather texture */
+  background-image:
+    linear-gradient(155deg, #2d2d2d 0%, #1c1c1c 40%, #171717 100%),
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(255,255,255,0.01) 2px,
+      rgba(255,255,255,0.01) 4px
+    );
+}
+
+/* Back face of the cover (dark side when opened) */
+.nb-cover::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(145deg, #1a1a1a 0%, #111 100%);
+  /* When rotated 180deg around Y, left↔right swap visually,
+     so 14px 4px 4px 14px here renders as 4px 14px 14px 4px on screen — matching front cover */
+  border-radius: 14px 4px 4px 14px;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  transform: rotateY(180deg);
+}
+
+/* Spine */
+.nb-spine {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 16px;
+  background: linear-gradient(90deg, #111 0%, #1a1a1a 50%, #222 100%);
+  border-right: 1px solid rgba(255,255,255,0.04);
+  border-radius: 4px 0 0 4px;
+}
+
+/* Elastic band */
+.nb-elastic {
+  position: absolute;
+  right: 28px;
+  top: -2px;
+  bottom: -2px;
+  width: 4px;
+  background: #ef4444;
+  border-radius: 2px;
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.3);
+}
+
+/* Corner accents */
+.nb-corner {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  border-color: rgba(255,255,255,0.06);
+  border-style: solid;
+  border-width: 0;
+}
+
+.nb-corner-tr {
+  top: 14px;
+  right: 14px;
+  border-top-width: 1px;
+  border-right-width: 1px;
+  border-radius: 0 4px 0 0;
+}
+
+.nb-corner-br {
+  bottom: 14px;
+  right: 14px;
+  border-bottom-width: 1px;
+  border-right-width: 1px;
+  border-radius: 0 0 4px 0;
+}
+
+/* ─── Opening animation ─── */
+.notebook.is-opening .nb-cover {
+  transform: rotateY(-160deg);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.02),
+    0 4px 20px rgba(0, 0, 0, 0.15);
+}
+
+/* Hide the back cover immediately when opening — white pages are what's revealed */
+.notebook.is-opening .nb-back {
+  opacity: 0;
+  transition: opacity 300ms ease-out;
+}
+
+.notebook.is-opening .nb-pages {
+  animation: pagesRuffle 800ms cubic-bezier(0.4, 0, 0.2, 1) 300ms;
+}
+
+@keyframes pagesRuffle {
+  0% { transform: none; }
+  25% { transform: rotateY(-3deg); }
+  50% { transform: rotateY(-1deg); }
+  75% { transform: rotateY(-2deg); }
+  100% { transform: none; }
+}
+
+.notebook.is-fading {
+  transition: opacity 500ms ease-out;
+  opacity: 0;
+}
+
+/* ─── Editable title ─── */
+.nb-title-area {
+  position: relative;
+  z-index: 2;
+  text-align: center;
+  margin-bottom: 16px;
+}
+
+.nb-title {
+  font-family: inherit;
+  font-size: 20px;
+  font-weight: 700;
+  color: #fff;
+  background: none;
+  border: none;
+  border-bottom: 1.5px solid rgba(255, 255, 255, 0.18);
+  text-align: center;
+  outline: none;
+  padding: 6px 12px;
+  width: 200px;
+  letter-spacing: -0.01em;
+  caret-color: #ef4444;
+  transition: border-color 200ms;
+  animation: nbCursorPulse 1.1s ease-in-out infinite;
+}
+
+@keyframes nbCursorPulse {
+  0%, 100% { border-color: rgba(255, 255, 255, 0.18); }
+  50% { border-color: rgba(239, 68, 68, 0.55); }
+}
+
+.nb-title:focus {
+  animation: none;
+  border-color: rgba(239, 68, 68, 0.5);
+}
+
+/* Stop pulsing once user has typed something */
+.nb-title.has-value {
+  animation: none;
+}
+
+.nb-title-hint {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.4);
+  margin-top: 8px;
+  letter-spacing: 0.02em;
+}
+
+/* ─── Stickers on notebook ─── */
+.nb-stickers {
+  position: absolute;
+  inset: 40px 24px 30px 28px;
+  z-index: 3;
+  pointer-events: none;
+}
+
+.nb-sticker {
+  position: absolute;
+  width: 42px;
+  height: 42px;
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0.2) rotate(var(--rot, 0deg));
+  animation: stickerPop 350ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.35));
+}
+
+@keyframes stickerPop {
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1) rotate(var(--rot, 0deg));
+  }
+}
+
+/* ─── Sticker tray ─── */
+.sticker-tray {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  opacity: 0;
+  transform: translateY(10px);
+  animation: fadeInUp 500ms cubic-bezier(0.16, 1, 0.3, 1) 700ms forwards;
+  transition: opacity 300ms ease-out, transform 300ms ease-out;
+}
+
+/* Hide tray + button when notebook is opening */
+.notebook-scene.is-opening .sticker-tray,
+.notebook-scene.is-opening .btn-continue {
+  opacity: 0 !important;
+  transform: translateY(8px) !important;
+  pointer-events: none;
+  transition: opacity 250ms ease-out, transform 250ms ease-out;
+}
+
+@keyframes fadeInUp {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.sticker-tray-label {
+  font-size: 13px;
+  color: #999;
+  font-weight: 500;
+}
+
+.sticker-tray-items {
+  display: flex;
+  gap: 10px;
+}
+
+.sticker-btn {
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  border: 2px solid #e5e7eb;
+  background: #f5f5f5;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 150ms, border-color 150ms, box-shadow 150ms;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+.sticker-btn:hover {
+  border-color: #ccc;
+  transform: translateY(-3px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.1);
+}
+
+.sticker-btn.active {
+  border-color: #ef4444;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.15);
+  transform: translateY(-2px);
+}
+
+.sticker-btn.used {
+  opacity: 0.25;
+  pointer-events: none;
+  transform: none;
+}
+
+/* ─── Continue button ─── */
+.btn-continue {
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  color: #fff;
+  background: #ef4444;
+  border: none;
+  padding: 14px 44px;
+  border-radius: 100px;
+  cursor: pointer;
+  opacity: 0;
+  transform: translateY(10px);
+  animation: fadeInUp 500ms cubic-bezier(0.16, 1, 0.3, 1) 900ms forwards;
+  transition: transform 180ms, box-shadow 180ms;
+}
+
+.btn-continue:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 24px rgba(239, 68, 68, 0.3);
+}
+
+.btn-continue:active {
+  transform: translateY(0);
+}
+
+/* ═══════════════════════════════════════════
+   PHASE 2: ONBOARDING — mini demo feed
+   Matches real product UI pixel-for-pixel
+   ═══════════════════════════════════════════ */
+
+.onboarding {
+  width: 100%;
+  max-width: 500px;
+  padding: 24px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 100dvh;
+  justify-content: center;
+}
+
+/* ─── Instruction ─── */
+.ob-instruction {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition: opacity 300ms;
+}
+
+.ob-step-badge {
+  font-size: 11px;
+  font-weight: 700;
+  color: #ef4444;
+  letter-spacing: 0.06em;
+}
+
+.ob-step-title {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: #111;
+}
+
+.ob-step-desc {
+  font-size: 14px;
+  color: #666;
+  line-height: 1.6;
+  margin-top: 4px;
+}
+
+.ob-step-desc strong {
+  color: #111;
+  font-weight: 600;
+  background: #dde0e4;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 12px;
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,0.08);
+}
+
+.ob-step-desc em {
+  color: #666;
+  font-style: normal;
+}
+
+/* ─── Demo app (mini feed) ─── */
+.demo-app {
+  background: #fff;
+  border-radius: 16px;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.06),
+    0 8px 30px rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  /* Fixed height so nothing jumps between steps.
+     244px feed + 1px border + 76px composer = 321, round to 332 for bottom breathing room */
+  height: 332px;
+  flex-shrink: 0;
+}
+
+.demo-feed {
+  /* Fixed height = total app minus composer (88px with extra bottom padding) */
+  height: 244px;
+  flex-shrink: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0 0 20px 0;
+  display: flex;
+  flex-direction: column;
+  word-wrap: break-word;
+  will-change: contents;
+  contain: layout style;
+}
+
+/* ─── Note row — matches .note-row grid layout ─── */
+.demo-note-row {
+  display: grid;
+  grid-template-columns: 60px 1fr;
+  align-items: start;
+  gap: 0;
+  padding: 10px 14px 10px 0;
+  position: relative;
+  opacity: 0;
+  transform: translateY(8px);
+  animation: demoRowIn 180ms ease-out forwards;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: background-color 160ms ease-out;
+  word-break: break-word;
+}
+
+@keyframes demoRowIn {
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.demo-note-row.note-selected {
+  background: rgba(239, 68, 68, 0.08);
+  border-radius: 0;
+}
+
+/* First and last selected rows get rounded corners matching demo-app */
+.demo-note-row.note-selected:first-child {
+  border-radius: 12px 12px 0 0;
+}
+
+.demo-note-row.note-selected:last-child {
+  border-radius: 0 0 12px 12px;
+}
+
+.demo-note-row.note-selected:only-child {
+  border-radius: 12px;
+}
+
+/* ─── Multi-select checkbox — matches .multi-check ─── */
+.demo-multi-check-col {
+  position: absolute;
+  left: 8px;
+  top: 11px;
+  display: flex;
+  align-items: center;
+}
+
+.demo-multi-check {
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  border: 1px solid #d1d5db;
+  background: #fff;
+  color: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transform: scale(0.92);
+  transition: opacity 170ms ease-out, transform 170ms ease-out, background-color 150ms ease-out, border-color 150ms ease-out, color 150ms ease-out;
+}
+
+.demo-app.multi-mode .demo-multi-check {
+  opacity: 1;
+  pointer-events: auto;
+  transform: scale(1);
+}
+
+.demo-note-row.note-selected .demo-multi-check {
+  background: #ef4444;
+  border-color: #ef4444;
+  color: #fff;
+}
+
+/* Shift time + body when multi-select active — matches real product */
+.demo-note-time,
+.demo-note-body {
+  transition: transform 180ms ease-out;
+}
+
+.demo-app.multi-mode .demo-note-time,
+.demo-app.multi-mode .demo-note-body {
+  transform: translateX(30px);
+}
+
+/* ─── Note time — matches .note-time ─── */
+.demo-note-time {
+  grid-column: 1;
+  font-size: 12px;
+  color: #9ca3af;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 24px;
+  padding-left: 14px;
+  padding-right: 8px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* ─── Note body — matches .note-body + .note-text ─── */
+.demo-note-body {
+  grid-column: 2;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.demo-note-text {
+  font-size: 14px;
+  line-height: 24px;
+  color: #111827;
+  white-space: normal;
+  word-break: break-word;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+/* ─── Task display — matches .task-line + .task-check ─── */
+.demo-task-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.demo-task-check {
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  border: 1px solid #e5e7eb;
+  background: #ffffff;
+  color: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-top: 2px;
+  transition: transform 150ms ease-out, background-color 150ms ease-out, border-color 150ms ease-out, color 150ms ease-out;
+}
+
+.demo-task-text {
+  display: block;
+  white-space: normal;
+  word-break: break-word;
+  font-size: 14px;
+  line-height: 24px;
+  color: #111827;
+}
+
+/* First word of task highlighted red — matches .task-pill in real product */
+.demo-task-first-word {
+  display: inline;
+  background: #fef2f2;
+  color: #ef4444;
+  font-weight: 600;
+  padding: 1px 6px 2px 6px;
+  border-radius: 5px;
+  margin-right: 2px;
+}
+
+/* Task pill — matches .task-pill */
+.demo-task-pill {
+  padding: 2px 8px 4px 8px;
+  border-radius: 5px;
+  background: #fef2f2;
+  color: #ef4444;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+/* ─── Question — matches .answer-wrap ─── */
+.demo-answer-wrap {
+  margin-top: 8px;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  position: relative;
+  background: #f3f4f6;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 10px 12px;
+  flex-wrap: wrap;
+}
+
+.demo-answer-label {
+  font-size: 13px;
+  color: #9ca3af;
+  font-style: italic;
+  flex: 0 0 auto;
+  user-select: none;
+}
+
+.demo-answer-placeholder {
+  font-size: 14px;
+  line-height: 22px;
+  color: #c0c4cc;
+  flex: 1 1 auto;
+}
+
+/* ─── Thread stack — matches .thread-stack ─── */
+.demo-thread-stack {
+  position: relative;
+  padding-bottom: 16px;
+  min-height: 42px;
+  width: min(280px, 100%);
+}
+
+.demo-thread-card {
+  position: relative;
+  display: block;
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid #d9dde3;
+  border-radius: 14px;
+  background: #ffffff;
+  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+}
+
+.demo-thread-card:first-child {
+  padding: 8px 60px 8px 12px;
+  z-index: 3;
+}
+
+.demo-thread-card:nth-child(2),
+.demo-thread-card:nth-child(3) {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  top: 0;
+  pointer-events: none;
+}
+
+.demo-thread-card:nth-child(2) {
+  transform: translateY(6px);
+  z-index: 2;
+}
+
+.demo-thread-card:nth-child(3) {
+  left: 16px;
+  right: 16px;
+  transform: translateY(12px);
+  z-index: 1;
+}
+
+.demo-thread-preview {
+  font-size: 13px;
+  line-height: 1.35;
+  font-weight: 700;
+  color: #111827;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+
+.demo-thread-count-pill {
+  position: absolute;
+  top: 50%;
+  right: 14px;
+  transform: translateY(-50%);
+  border: 1px solid #e5e7eb;
+  background: #f8fafc;
+  color: #6b7280;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+/* Thread note has extra bottom padding — matches .is-thread-note */
+.demo-note-row.is-thread-note {
+  padding-bottom: 24px;
+}
+
+/* ─── Action bar — matches .multi-action-bar + .multi-action-inner ─── */
+.demo-action-bar {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  /* Sits just above the composer (88px) with 8px gap */
+  bottom: 96px;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 190ms ease-out, transform 190ms ease-out;
+  z-index: 4;
+}
+
+.demo-action-bar.visible {
+  pointer-events: auto;
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.demo-action-inner {
+  border: 1px solid #111111;
+  background: rgba(17, 17, 17, 0.97);
+  box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  border-radius: 14px;
+  padding: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.demo-action-count {
+  font-size: 13px;
+  color: #d1d5db;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.demo-action-buttons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.demo-action-btn {
+  font-family: inherit;
+  border-radius: 10px;
+  border: 1px solid #374151;
+  background: #1f2937;
+  color: #f9fafb;
+  height: 36px;
+  padding: 0 12px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 120ms ease-out, opacity 150ms ease-out;
+}
+
+.demo-action-btn:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.demo-action-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* ─── Demo composer — matches .composer-wrap + .input-wrapper ─── */
+.demo-composer {
+  padding: 12px 14px 20px;
+  border-top: 1px solid #f1f1f1;
+  background: #fff;
+  z-index: 3;
+  flex-shrink: 0;
+}
+
+.demo-input-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 16px;
+  padding: 10px 10px 10px 16px;
+  min-height: 52px;
+  transition: box-shadow 200ms ease-out;
+}
+
+.demo-input-wrapper:focus-within {
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.10);
+}
+
+.demo-input {
+  flex: 1;
+  font-family: inherit;
+  font-size: 15px;
+  border: none;
+  outline: none;
+  resize: none;
+  line-height: 24px;
+  min-height: 24px;
+  max-height: 72px;
+  color: #111827;
+  background: transparent;
+  padding: 0;
+}
+
+.demo-input::placeholder {
+  color: #9ca3af;
+}
+
+/* Send button — matches .send-button */
+.demo-send {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  border: 1px solid #dc2626;
+  background: #ef4444;
+  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: opacity 200ms ease-out, transform 150ms ease-out;
+}
+
+.demo-send:active:not(:disabled) {
+  transform: scale(0.95);
+}
+
+.demo-send:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ─── Result badge ─── */
+.ob-result {
+  font-size: 14px;
+  font-weight: 600;
+  color: #10b981;
+  text-align: center;
+  min-height: 20px;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 300ms, transform 300ms;
+  margin-top: 0;
+}
+
+.ob-result.show {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ─── Navigation ─── */
+.ob-nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 0;
+}
+
+.ob-skip {
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  color: #bbb;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 8px 16px;
+  border-radius: 8px;
+  transition: color 150ms;
+}
+
+.ob-skip:hover { color: #888; }
+
+
+/* ═══════════════════════════════════════════
+   PHASE 3: WELCOME FINALE
+   ═══════════════════════════════════════════ */
+
+.welcome-finale {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.wf-title {
+  font-size: clamp(32px, 7vw, 48px);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: #111;
+  opacity: 0;
+  transform: translateY(16px);
+  filter: blur(6px);
+}
+
+.phase.active .wf-title {
+  animation: wfReveal 1.8s cubic-bezier(0.16, 1, 0.3, 1) 200ms forwards;
+}
+
+.wf-sub {
+  font-size: 16px;
+  color: #999;
+  opacity: 0;
+}
+
+.phase.active .wf-sub {
+  animation: wfSubReveal 1.2s cubic-bezier(0.16, 1, 0.3, 1) 1000ms forwards;
+}
+
+/* ─── Handwritten text on the open notebook pages ─── */
+.nb-journal-text {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 20px;
+  pointer-events: none;
+  opacity: 0;
+  z-index: 4;
+}
+
+.nb-journal-text.is-visible {
+  animation: journalTextIn 700ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes journalTextIn {
+  0%  { opacity: 0; transform: translateY(6px) rotate(-1.5deg); }
+  100%{ opacity: 1; transform: translateY(0)   rotate(-1.5deg); }
+}
+
+.nb-journal-text span {
+  font-family: 'Georgia', 'Times New Roman', serif;
+  font-style: italic;
+  font-size: 13px;
+  line-height: 1.55;
+  color: #222;
+  text-align: center;
+  white-space: pre-line;
+}
+
+@keyframes wfReveal {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+
+@keyframes wfSubReveal {
+  to { opacity: 1; }
+}
+
+/* ─── Reduced motion ─── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .phase { transition: none; }
+  .notebook, .sticker-tray, .btn-continue,
+  .wf-title, .wf-sub, .ob-step, .nb-sticker {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+}
+
+/* ─── Mobile ─── */
+@media (max-width: 400px) {
+  .notebook {
+    width: 260px;
+    height: 350px;
+  }
+
+  .sticker-btn {
+    width: 44px;
+    height: 44px;
+  }
+
+  .onboarding {
+    padding: 24px 16px;
+  }
+
+  .ob-step-title {
+    font-size: 20px;
+  }
+}

@@ -18,6 +18,17 @@ body {
   padding: 32px;
 }
 
+.back-link {
+  display: inline-block;
+  font-size: 13px;
+  font-weight: 600;
+  color: #999;
+  text-decoration: none;
+  margin-bottom: 20px;
+  transition: color 150ms;
+}
+.back-link:hover { color: #111; }
+
 h1 { font-size: 28px; color: #111; margin-bottom: 8px; text-wrap: balance; }
 .subtitle { color: #666; margin-bottom: 24px; text-wrap: pretty; }
 
@@ -55,6 +66,8 @@ button {
 .error.show{ display:block; }
 
 .hint{ margin-top:16px; color:#777; font-size: 13px; line-height:1.4; text-wrap: pretty; }
+.hint .link { color: #ef4444; text-decoration: none; font-weight: 600; }
+.hint .link:hover { text-decoration: underline; }
 
 .sr-only {
   position: absolute;
