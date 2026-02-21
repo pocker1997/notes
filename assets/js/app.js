@@ -188,8 +188,15 @@
   let reviewSwiping = false;
   let reviewTimerInterval = null;
   let reviewForceShow = false;
-  let reviewBannerShownThisSession = false;
   let reviewHintInterval = null;
+
+  // persists across page reloads within the same day
+  function isReviewBannerShown() {
+    return localStorage.getItem(`review_banner_shown_${todayKey()}`) === '1';
+  }
+  function markReviewBannerShown() {
+    localStorage.setItem(`review_banner_shown_${todayKey()}`, '1');
+  }
 
   function getReviewCutoff() {
     // cutoff = today at 8:00 AM local time
@@ -308,11 +315,12 @@
     // no tasks and not done → no banner
     if (!tasks.length && !done) return null;
 
-    // only show after 8:00 AM (unless forced via debug, or already shown this session)
-    if (!reviewForceShow && !reviewBannerShownThisSession && new Date().getHours() < 8) return null;
+    // done banner always shows (it's just a timer, not a prompt)
+    // active banner only shows after 8:00 AM, or if already shown today
+    if (!done && !reviewForceShow && !isReviewBannerShown() && new Date().getHours() < 8) return null;
 
-    // mark as shown so subsequent renders (e.g. after drag) keep the banner visible
-    reviewBannerShownThisSession = true;
+    // persist so active banner survives page reloads within the same day
+    markReviewBannerShown();
 
     const banner = document.createElement('button');
     banner.type = 'button';
@@ -365,8 +373,9 @@
       if (!timerEl) { clearInterval(reviewTimerInterval); return; }
       const now = new Date();
       const target = new Date(now);
-      target.setDate(target.getDate() + 1);
       target.setHours(8, 0, 0, 0);
+      // if 8:00 today already passed — aim for tomorrow
+      if (target <= now) target.setDate(target.getDate() + 1);
       const diff = Math.max(0, target - now);
       const h = String(Math.floor(diff / 3600000)).padStart(2, '0');
       const m = String(Math.floor((diff % 3600000) / 60000)).padStart(2, '0');
