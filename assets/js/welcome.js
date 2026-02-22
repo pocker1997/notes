@@ -328,28 +328,56 @@
         const stack = document.createElement('div');
         stack.className = 'demo-thread-stack';
 
-        const topCard = document.createElement('div');
-        topCard.className = 'demo-thread-card';
+        // front card
+        const frontCard = document.createElement('div');
+        frontCard.className = 'demo-thread-card-front';
+
+        const cardBody = document.createElement('div');
+        cardBody.className = 'demo-thread-card-body';
+
+        const cardHeader = document.createElement('div');
+        cardHeader.className = 'demo-thread-card-header';
 
         const preview = document.createElement('div');
         preview.className = 'demo-thread-preview';
-        preview.textContent = n.threadItems[0]?.displayText || 'Thread';
+        // show thread title if set, otherwise omit (pill stays)
+        preview.textContent = n.threadTitle || n.displayText || '';
 
         const countPill = document.createElement('div');
         countPill.className = 'demo-thread-count-pill';
         countPill.textContent = String(n.threadItems.length);
 
-        topCard.appendChild(preview);
-        topCard.appendChild(countPill);
+        cardHeader.appendChild(preview);
+        cardHeader.appendChild(countPill);
 
-        const backCard1 = document.createElement('div');
-        backCard1.className = 'demo-thread-card';
-        const backCard2 = document.createElement('div');
-        backCard2.className = 'demo-thread-card';
+        const previewSub = document.createElement('div');
+        previewSub.className = 'demo-thread-preview-sub';
+        // show last item text as the main note content
+        const lastItem = n.threadItems[n.threadItems.length - 1];
+        previewSub.textContent = lastItem?.displayText || '';
 
-        stack.appendChild(topCard);
-        stack.appendChild(backCard1);
-        stack.appendChild(backCard2);
+        cardBody.appendChild(cardHeader);
+        cardBody.appendChild(previewSub);
+        frontCard.appendChild(cardBody);
+
+        // ear column: one active ear + add button
+        const ears = document.createElement('div');
+        ears.className = 'demo-thread-ears';
+
+        const earCount = Math.min(n.threadItems.length, 3);
+        for (let i = 0; i < earCount; i++) {
+          const ear = document.createElement('div');
+          ear.className = 'demo-thread-ear' + (i === 0 ? ' is-active' : '');
+          ears.appendChild(ear);
+        }
+
+        const addBtn = document.createElement('div');
+        addBtn.className = 'demo-thread-add-btn';
+        addBtn.innerHTML = `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`;
+        ears.appendChild(addBtn);
+
+        stack.appendChild(frontCard);
+        stack.appendChild(ears);
         textEl.appendChild(stack);
 
       } else if (n.isTask) {

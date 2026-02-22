@@ -780,7 +780,7 @@ body.is-editing .input-wrapper:focus-within{
   width: 20px;
   height: 20px;
   border-radius: 5px;
-  border: 1px solid #d1d5db;
+  border: 1px solid #e5e7eb;
   color: transparent;
   background: #fff;
   opacity: 0;
@@ -840,55 +840,64 @@ body.is-multi-select .note-del{
   text-wrap: pretty;
 }
 
-/* thread stack */
+/* ── thread stack ─────────────────────────────────────────── */
+/* ── thread stack wrapper ──────────────────────────────────── */
 .thread-stack{
   position: relative;
-  padding-bottom: 16px;
-  min-height: 42px;
   width: min(300px, 100%);
+  perspective: 800px;
+  /* right space for the ear+add column */
+  padding-right: 28px;
 }
 
-.thread-stack .thread-card{
+/* ── main (front) card — fixed height ─────────────────────── */
+/*
+  Height: ears flex-fill the column, addBtn fixed 28px.
+  column = card − 12px inset = 140 − 12 = 128px
+  ears: (128 − 28 − 3×4) / 3 = 88/3 ≈ 29px each — good, not squished
+*/
+.thread-card-front{
   position: relative;
-  display: block;
+  display: flex;
+  flex-direction: column;
   width: 100%;
-  min-height: 42px;
+  height: 140px;
+  overflow: hidden;
   border: 1px solid #d9dde3;
   border-radius: 14px;
   background: #ffffff;
-  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
-}
-
-.thread-stack .thread-card:first-child{
+  box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.07);
   cursor: pointer;
-  padding: 8px 76px 8px 12px;
-  z-index: 3;
+  transition: box-shadow 150ms ease, border-color 150ms ease;
 }
 
-.thread-stack .thread-card:nth-child(2),
-.thread-stack .thread-card:nth-child(3){
-  position: absolute;
-  left: 8px;
-  right: 8px;
-  top: 0;
-  pointer-events: none;
+.thread-card-front:active{
+  box-shadow: 0 0 0 0 transparent;
 }
 
-.thread-stack .thread-card:nth-child(2){
-  transform: translateY(6px);
-  z-index: 2;
+/* ── card body — title header + note text ──────────────────── */
+.thread-card-body{
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  height: 100%;
+  overflow: hidden;
 }
 
-.thread-stack .thread-card:nth-child(3){
-  left: 16px;
-  right: 16px;
-  transform: translateY(12px);
-  z-index: 1;
+/* header row: title + count pill */
+.thread-card-header{
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
 }
 
+/* title — semi-bold 14px, one line with ellipsis */
 .thread-preview{
-  font-size: 13px;
-  line-height: 1.35;
+  flex: 1;
+  font-size: 14px;
+  line-height: 1.3;
   font-weight: 600;
   color: #6b7280;
   white-space: nowrap;
@@ -896,23 +905,243 @@ body.is-multi-select .note-del{
   overflow: hidden;
 }
 
+.thread-preview:empty{
+  display: none;
+}
+
+/* count pill */
 .thread-count-pill{
-  position: absolute;
-  top: 50%;
-  right: 14px;
-  transform: translateY(-50%);
+  flex-shrink: 0;
   border: 1px solid #e5e7eb;
   background: #f8fafc;
   color: #6b7280;
   border-radius: 999px;
-  padding: 4px 10px;
-  font-size: 12px;
+  padding: 2px 8px;
+  font-size: 11px;
   font-weight: 700;
   line-height: 1;
   white-space: nowrap;
 }
 
-.note-row.thread-drop-target .thread-stack .thread-card:first-child{
+/* main note text — fills remaining card space, clipped */
+.thread-preview-sub{
+  flex: 1;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.45;
+  color: #374151;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  text-overflow: ellipsis;
+  word-break: break-word;
+}
+
+/* ── right column: ears + add button ──────────────────────── */
+.thread-ears{
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  right: -2px;
+  width: 26px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+}
+
+/* ear tab — fill available column space equally */
+.thread-ear{
+  flex: 1;
+  min-height: 24px;
+  width: 20px;
+  border: 1px solid #d9dde3;
+  border-left: none;
+  border-radius: 0 8px 8px 0;
+  background: #f3f4f6;
+  cursor: pointer;
+  transition: background 120ms ease, width 120ms ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  position: relative;
+}
+
+.thread-ear::before{
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 2px;
+  height: 10px;
+  border-radius: 2px;
+  background: #d1d5db;
+  transition: background 120ms ease;
+}
+
+.thread-ear:hover{
+  background: #e9eaec;
+  width: 24px;
+}
+
+.thread-ear:hover::before{
+  background: #9ca3af;
+}
+
+.thread-ear:active{
+  background: #fee2e2;
+}
+
+.thread-ear:active::before{
+  background: #ef4444;
+}
+
+.thread-ear.is-active{
+  background: #ffffff;
+  border-color: #d9dde3;
+}
+
+.thread-ear.is-active::before{
+  background: #ef4444;
+}
+
+/* add button "active" look when composer is open (class on stack) */
+.thread-stack.is-adding .thread-add-btn{
+  background: #ffffff;
+  border-color: #d9dde3;
+}
+
+.thread-stack.is-adding .thread-add-btn svg{
+  color: #ef4444;
+}
+
+/* add button — fixed slot at the bottom of the ear column */
+.thread-add-btn{
+  flex-shrink: 0;
+  height: 28px;
+  width: 20px;
+  border: 1px solid #d9dde3;
+  border-left: none;
+  border-radius: 0 8px 8px 0;
+  background: #f3f4f6;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 140ms ease, border-color 140ms ease, width 140ms ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.thread-add-btn svg{
+  color: #9ca3af;
+  transition: color 140ms ease;
+  flex-shrink: 0;
+}
+
+.thread-add-btn:hover{
+  background: #ef4444;
+  border-color: #ef4444;
+  width: 24px;
+}
+
+.thread-add-btn:hover svg{
+  color: #fff;
+}
+
+.thread-add-btn:active{
+  background: #dc2626;
+  border-color: #dc2626;
+}
+
+/* ── card flip animation ───────────────────────────────────── */
+@keyframes threadCardFlipIn{
+  0%   { opacity: 0; transform: rotateY(-12deg) scale(0.97); }
+  100% { opacity: 1; transform: rotateY(0deg) scale(1); }
+}
+
+.thread-card-front.thread-flipping{
+  animation: threadCardFlipIn 180ms cubic-bezier(.25,.8,.25,1) forwards;
+}
+
+/* ── quick-add composer — replaces card content on add tap ── */
+.thread-quick-add{
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 8px 10px 8px 12px;
+}
+
+.thread-quick-input{
+  flex: 1;
+  resize: none;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 13px;
+  line-height: 1.45;
+  color: #111827;
+  min-height: 22px;
+  max-height: 90px;
+  overflow-y: auto;
+  font-family: inherit;
+}
+
+.thread-quick-input::placeholder{
+  color: #c0c4cb;
+  font-weight: 400;
+}
+
+.thread-quick-send{
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: #ef4444;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transform: scale(0.7);
+  transition: opacity 150ms ease, transform 150ms cubic-bezier(.2,.8,.25,1), background 100ms;
+  pointer-events: none;
+}
+
+.thread-quick-send.is-visible{
+  opacity: 1;
+  transform: scale(1);
+  pointer-events: auto;
+}
+
+.thread-quick-send:active{
+  background: #dc2626;
+  transform: scale(0.92);
+}
+
+.thread-quick-send svg{
+  color: #fff;
+}
+
+/* card in "quick-add open" state — body hides, composer shows */
+.thread-card-front.is-adding .thread-card-body{
+  display: none;
+}
+
+.thread-card-front .thread-quick-add{
+  display: none;
+}
+
+.thread-card-front.is-adding .thread-quick-add{
+  display: flex;
+}
+
+/* ── drop-target state (drag-n-drop into thread) ──────────── */
+.note-row.thread-drop-target .thread-card-front{
   border-color: rgba(239, 68, 68, 0.8);
   box-shadow: 0 10px 24px rgba(239, 68, 68, 0.2);
 }
@@ -922,11 +1151,12 @@ body.is-multi-select .note-del{
   border-color: #ef4444;
 }
 
-.note-row.thread-drop-accept .thread-stack .thread-card:first-child{
+.note-row.thread-drop-accept .thread-card-front{
   box-shadow: 0 14px 30px rgba(239, 68, 68, 0.26);
   transform: translateY(-1px);
 }
 
+/* ── merge-out animation (when note absorbed into thread) ─── */
 .note-row.thread-merging{
   animation: threadMergeOut 200ms cubic-bezier(.2,.8,.25,1) forwards;
   pointer-events: none;
@@ -934,37 +1164,32 @@ body.is-multi-select .note-del{
 
 @keyframes threadMergeOut{
   from { opacity: 1; transform: scale(1) translateY(0); }
-  to { opacity: 0; transform: scale(0.88) translateY(-16px); }
+  to   { opacity: 0; transform: scale(0.88) translateY(-16px); }
 }
 
-.note-row.is-thread-note.note-enter .thread-stack .thread-card:first-child{
+/* ── enter animation ──────────────────────────────────────── */
+.note-row.is-thread-note.note-enter .thread-card-front{
   opacity: 0;
   transform: translateY(10px) scale(0.97);
 }
 
-.note-row.is-thread-note.note-enter.note-enter-active .thread-stack .thread-card:first-child{
+.note-row.is-thread-note.note-enter.note-enter-active .thread-card-front{
   opacity: 1;
   transform: translateY(0) scale(1);
   transition: opacity 200ms ease-out, transform 200ms cubic-bezier(.2,.8,.25,1);
 }
 
-.note-row.is-thread-note.note-enter .thread-stack .thread-card:nth-child(2),
-.note-row.is-thread-note.note-enter .thread-stack .thread-card:nth-child(3){
+.note-row.is-thread-note.note-enter .thread-ears{
   opacity: 0;
 }
 
-.note-row.is-thread-note.note-enter.note-enter-active .thread-stack .thread-card:nth-child(2){
+.note-row.is-thread-note.note-enter.note-enter-active .thread-ears{
   opacity: 1;
-  transition: opacity 200ms ease-out 60ms;
-}
-
-.note-row.is-thread-note.note-enter.note-enter-active .thread-stack .thread-card:nth-child(3){
-  opacity: 1;
-  transition: opacity 200ms ease-out 100ms;
+  transition: opacity 200ms ease-out 80ms;
 }
 
 .note-row.is-thread-note{
-  padding-bottom: 24px;
+  padding-bottom: 20px;
 }
 
 /* delete button base */
@@ -1072,6 +1297,12 @@ body.is-multi-select .note-del{
   pointer-events: auto;
   opacity: 1;
   transform: translateY(0);
+}
+
+/* push feed content above the visible action bar so last note isn't hidden */
+body.is-multi-select #notes-container{
+  padding-bottom: calc(var(--composer-offset) + 20px);
+  overflow-x: hidden;
 }
 
 .multi-action-inner{

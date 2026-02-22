@@ -1761,7 +1761,7 @@
   function isRowActionTarget(target) {
     if (!target) return false;
     return !!target.closest(
-      '.note-del, .task-check, .answer-wrap, .answer-input, .answer-save, [data-answer-save], [data-answer-input], [data-answer-wrap], .multi-check, .note-moved, .related-link'
+      '.note-del, .task-check, .answer-wrap, .answer-input, .answer-save, [data-answer-save], [data-answer-input], [data-answer-wrap], .multi-check, .note-moved, .related-link, .thread-ear, .thread-quick-add, .thread-add-btn'
     );
   }
 
@@ -2910,40 +2910,206 @@
         row.classList.add('is-thread-note');
         const items = safeThreadItems(threadPayload);
         const threadTitle = threadPayload.title || '';
-        const lastText = (items[items.length - 1]?.text || '').replace(/\s+/g, ' ').trim();
+
+        // Build an array of "cards" to flip through (max 5 for ear display)
+        // Each card shows a different item from the thread
+        const cardItems = items.length > 0 ? items.slice().reverse().slice(0, 3) : [];
+        // currentCardIndex tracks which card is shown (0 = newest/last)
+        let currentCardIndex = 0;
 
         const stack = document.createElement('div');
         stack.className = 'thread-stack';
         stack.setAttribute('data-thread-id', n.id);
 
-        const topCard = document.createElement('div');
-        topCard.className = 'thread-card';
-        topCard.setAttribute('data-thread-open', n.id);
+        // ── front card ──────────────────────────────────────────
+        const frontCard = document.createElement('div');
+        frontCard.className = 'thread-card-front';
+        frontCard.setAttribute('data-thread-open', n.id);
+
+        // card body: header row (title + pill) + main text below
+        const cardBody = document.createElement('div');
+        cardBody.className = 'thread-card-body';
+
+        const cardHeader = document.createElement('div');
+        cardHeader.className = 'thread-card-header';
+
+        const previewEl = document.createElement('div');
+        previewEl.className = 'thread-preview';
 
         const countPill = document.createElement('div');
         countPill.className = 'thread-count-pill';
         countPill.textContent = `${items.length}`;
 
-        const previewEl = document.createElement('div');
-        previewEl.className = 'thread-preview';
-        if (threadTitle) {
-          previewEl.classList.add('has-title');
-          previewEl.textContent = threadTitle;
-        } else {
-          previewEl.textContent = lastText || 'Open thread to view messages';
+        const previewSub = document.createElement('div');
+        previewSub.className = 'thread-preview-sub';
+
+        function renderCardContent(idx) {
+          if (cardItems.length === 0) {
+            previewEl.textContent = threadTitle || 'Тред';
+            previewSub.textContent = '';
+            return;
+          }
+          const item = cardItems[idx];
+          const itemText = (item.text || '').replace(/\s+/g, ' ').trim();
+          // title row: show thread title if exists, otherwise nothing
+          previewEl.textContent = threadTitle || '';
+          // main text: the actual note content
+          previewSub.textContent = itemText;
         }
 
-        topCard.appendChild(previewEl);
-        topCard.appendChild(countPill);
+        renderCardContent(0);
 
-        const backCard1 = document.createElement('div');
-        backCard1.className = 'thread-card';
-        const backCard2 = document.createElement('div');
-        backCard2.className = 'thread-card';
+        // header: title (may be empty) + count pill
+        cardHeader.appendChild(previewEl);
+        cardHeader.appendChild(countPill);
+        cardBody.appendChild(cardHeader);
+        // main note text below header (always shown)
+        cardBody.appendChild(previewSub);
 
-        stack.appendChild(topCard);
-        stack.appendChild(backCard1);
-        stack.appendChild(backCard2);
+        frontCard.appendChild(cardBody);
+
+        // ── quick-add composer (hidden until + is tapped) ───────
+        const quickAdd = document.createElement('div');
+        quickAdd.className = 'thread-quick-add';
+
+        const quickInput = document.createElement('textarea');
+        quickInput.className = 'thread-quick-input';
+        quickInput.placeholder = 'Додати до треду…';
+        quickInput.rows = 1;
+
+        const quickSend = document.createElement('button');
+        quickSend.className = 'thread-quick-send';
+        quickSend.type = 'button';
+        quickSend.setAttribute('aria-label', 'Надіслати');
+        quickSend.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>`;
+
+        function autoResizeQuick() {
+          quickInput.style.height = 'auto';
+          quickInput.style.height = Math.min(quickInput.scrollHeight, 90) + 'px';
+        }
+
+        function openQuickAdd() {
+          frontCard.classList.add('is-adding');
+          stack.classList.add('is-adding');
+          requestAnimationFrame(() => quickInput.focus());
+        }
+
+        function closeQuickAdd() {
+          frontCard.classList.remove('is-adding');
+          stack.classList.remove('is-adding');
+          quickInput.value = '';
+          quickInput.style.height = '';
+          quickSend.classList.remove('is-visible');
+        }
+
+        quickInput.addEventListener('input', () => {
+          autoResizeQuick();
+          quickSend.classList.toggle('is-visible', quickInput.value.trim().length > 0);
+        });
+
+        quickInput.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            if (quickInput.value.trim()) quickSend.click();
+          }
+          if (e.key === 'Escape') {
+            e.stopPropagation();
+            closeQuickAdd();
+          }
+        });
+
+        quickAdd.addEventListener('click', (e) => e.stopPropagation());
+
+        quickSend.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          const text = quickInput.value.trim();
+          if (!text) return;
+          quickSend.disabled = true;
+          const taskInfo = parseTask(text);
+          const result = await mutateThreadPayload(n.id, (list) => {
+            list.push({
+              id: null,
+              text,
+              date: new Date().toISOString(),
+              is_task: !!taskInfo.isTask,
+              completed: false,
+              is_question: isQuestionText(text),
+              answer: null
+            });
+            return list;
+          });
+          quickSend.disabled = false;
+          if (!result) return;
+          closeQuickAdd();
+          // update pill + preview optimistically
+          const newCount = safeThreadItems(result.payload).length;
+          countPill.textContent = `${newCount}`;
+          const updatedItems = safeThreadItems(result.payload).slice().reverse();
+          cardItems.length = 0;
+          updatedItems.slice(0, 3).forEach((it) => cardItems.push(it));
+          currentCardIndex = 0;
+          renderCardContent(0);
+          buildEars();
+          renderCurrentView({ preserveScroll: true });
+        });
+
+        quickAdd.appendChild(quickInput);
+        quickAdd.appendChild(quickSend);
+        frontCard.appendChild(quickAdd);
+
+        // ── ear tabs + add button column ────────────────────────
+        const earsContainer = document.createElement('div');
+        earsContainer.className = 'thread-ears';
+
+        // ── add button — always last in the ear column ──────────
+        const addBtn = document.createElement('button');
+        addBtn.className = 'thread-add-btn';
+        addBtn.type = 'button';
+        addBtn.setAttribute('aria-label', 'Додати запис до треду');
+        addBtn.innerHTML = `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`;
+        addBtn.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          openQuickAdd();
+        });
+
+        function buildEars() {
+          // remove all ear tabs (keep addBtn)
+          earsContainer.querySelectorAll('.thread-ear').forEach((el) => el.remove());
+          const count = Math.min(cardItems.length, 3); // max 3 ears
+          for (let i = 0; i < count; i++) {
+            const ear = document.createElement('button');
+            ear.className = 'thread-ear' + (i === currentCardIndex ? ' is-active' : '');
+            ear.type = 'button';
+            ear.setAttribute('aria-label', `Запис ${i + 1}`);
+            ear.addEventListener('click', (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              // close composer first if open, then switch card
+              closeQuickAdd();
+              if (i === currentCardIndex) return;
+              currentCardIndex = i;
+              frontCard.classList.remove('thread-flipping');
+              void frontCard.offsetWidth;
+              frontCard.classList.add('thread-flipping');
+              frontCard.addEventListener('animationend', () => {
+                frontCard.classList.remove('thread-flipping');
+              }, { once: true });
+              renderCardContent(i);
+              earsContainer.querySelectorAll('.thread-ear').forEach((el, idx2) => {
+                el.classList.toggle('is-active', idx2 === i);
+              });
+            });
+            earsContainer.insertBefore(ear, addBtn);
+          }
+        }
+
+        // add button goes in first, ears are inserted before it
+        earsContainer.appendChild(addBtn);
+        buildEars();
+
+        stack.appendChild(frontCard);
+        stack.appendChild(earsContainer);
         noteTextEl.appendChild(stack);
       } else if (isTask) {
         const wrap = document.createElement('div');
