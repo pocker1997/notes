@@ -771,8 +771,15 @@
   let editingThreadOriginalText = '';
   let threadLiveInterval = null;
   let threadLastPayloadHash = null;
-  let viewMode = 'feed'; // feed | organized
-  let activeFolderType = null;
+  let viewMode = 'feed'; // feed only now (organized removed)
+  let activeFolderType = null; // kept for compat, always null
+
+  // === Filter & Sort state ===
+  let filterType   = 'all';   // all | note | task | question | thread
+  let filterStatus = 'all';   // all | active | done  (only for tasks)
+  let filterDue    = 'all';   // all | today | week | overdue | has
+  let filterSort   = 'newest'; // newest | oldest | due
+  let filterPanelOpen = false;
 
   const THREAD_MARKER = '__thread_v1__';
   const REVIEW_MARKER = '__review_done__';
@@ -944,26 +951,93 @@
   }
 
   function updateViewModeUi() {
-    const buttons = viewModeToggle?.querySelectorAll('[data-view-mode]') || [];
-    buttons.forEach((btn) => {
-      const mode = btn.dataset.viewMode;
-      const isActive = mode === viewMode;
-      btn.classList.toggle('is-active', isActive);
-      btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
-    });
+    // Feed btn always active; filter btn active when panel is open
+    viewFeedBtn?.classList.toggle('is-active', !filterPanelOpen);
+    viewFeedBtn?.setAttribute('aria-selected', filterPanelOpen ? 'false' : 'true');
+    viewFilterBtn?.classList.toggle('is-active', filterPanelOpen);
+    viewFilterBtn?.setAttribute('aria-selected', filterPanelOpen ? 'true' : 'false');
+    // show badge on filter btn when any filter is active
+    const anyFilter = filterType !== 'all' || filterStatus !== 'all' || filterDue !== 'all' || filterSort !== 'newest';
+    viewFilterBtn?.classList.toggle('has-active-filter', anyFilter);
   }
 
   function setViewMode(nextMode) {
-    if (nextMode !== 'feed' && nextMode !== 'organized') return;
-    if (viewMode === nextMode) return;
-
-    viewMode = nextMode;
+    // no-op for organized (removed), keep feed
+    if (nextMode === 'organized') return;
+    viewMode = 'feed';
     activeFolderType = null;
     if (multiSelectMode) exitMultiSelectMode();
     if (editingNoteId) exitEdit({ restoreInput: true });
     updateViewModeUi();
     updateComposerVisibility();
     renderCurrentView();
+  }
+
+  function toggleFilterPanel() {
+    filterPanelOpen = !filterPanelOpen;
+    const panel = document.getElementById('filter-panel');
+    if (panel) {
+      panel.classList.toggle('is-open', filterPanelOpen);
+      panel.setAttribute('aria-hidden', filterPanelOpen ? 'false' : 'true');
+    }
+    updateViewModeUi();
+  }
+
+  function applyFiltersAndSort(notes) {
+    let result = notes.slice();
+
+    // Type filter
+    if (filterType !== 'all') {
+      result = result.filter(n => {
+        if (filterType === 'task')     return n.is_task;
+        if (filterType === 'question') return n.is_question;
+        if (filterType === 'thread')   return isThreadNote(n);
+        if (filterType === 'note')     return !n.is_task && !n.is_question && !isThreadNote(n);
+        return true;
+      });
+    }
+
+    // Status filter (tasks only)
+    if (filterStatus !== 'all') {
+      result = result.filter(n => {
+        if (!n.is_task) return true; // non-tasks always pass
+        if (filterStatus === 'active') return !n.completed;
+        if (filterStatus === 'done')   return !!n.completed;
+        return true;
+      });
+    }
+
+    // Due date filter
+    if (filterDue !== 'all') {
+      const now = new Date(); now.setHours(0,0,0,0);
+      const weekEnd = new Date(now); weekEnd.setDate(now.getDate() + 7);
+      result = result.filter(n => {
+        if (!n.due_date) return filterDue === 'all';
+        const d = new Date(n.due_date); d.setHours(0,0,0,0);
+        if (filterDue === 'today')   return d.getTime() === now.getTime();
+        if (filterDue === 'week')    return d >= now && d <= weekEnd;
+        if (filterDue === 'overdue') return d < now && !n.completed;
+        if (filterDue === 'has')     return true;
+        return true;
+      });
+    }
+
+    // Sort
+    if (filterSort === 'oldest') {
+      result.sort((a, b) => new Date(a.date) - new Date(b.date));
+    } else if (filterSort === 'due') {
+      result.sort((a, b) => {
+        if (!a.due_date && !b.due_date) return 0;
+        if (!a.due_date) return 1;
+        if (!b.due_date) return -1;
+        return new Date(a.due_date) - new Date(b.due_date);
+      });
+    } else {
+      // newest first (default)
+      result.sort((a, b) => new Date(b.date) - new Date(a.date));
+    }
+
+    return result;
   }
 
   function updateMultiActionState() {
@@ -1064,16 +1138,43 @@
     if (bracketRe.test(text)) {
       const displayText = text.replace(bracketRe, '');
       const trimmed = displayText.trimStart();
-      const firstWordMatch = trimmed.match(/^([^\s]+)/);
-      const firstWord = firstWordMatch ? firstWordMatch[1] : '';
 
       let highlightIndex = -1;
       let highlightLength = 0;
 
-      if (firstWord) {
-        const idx = displayText.indexOf(firstWordMatch[0]);
-        highlightIndex = idx;
-        highlightLength = firstWord.length;
+      // Walk words, skipping any that are pure date tokens
+      const wordRe = /\S+/g;
+      let wm;
+      while ((wm = wordRe.exec(trimmed)) !== null) {
+        const word = wm[0];
+        // Check if this word (possibly combined with next for "25 березня" style) is a date token
+        DATE_RE.lastIndex = 0;
+        const dateMatch = DATE_RE.exec(word);
+        // Also try word + next word for "25 березня", "in friday" etc (two-token dates)
+        const nextWordMatch = /\S+/.exec(trimmed.slice(wm.index + word.length + 1));
+        const twoWords = nextWordMatch ? word + ' ' + nextWordMatch[0] : null;
+        DATE_RE.lastIndex = 0;
+        const twoMatch = twoWords ? DATE_RE.exec(twoWords) : null;
+
+        const isDateToken =
+          (dateMatch && dateMatch.index === 0 && dateMatch[0].length === word.length) ||
+          (twoMatch && twoMatch.index === 0 && twoMatch[0].length === twoWords.length);
+
+        if (!isDateToken) {
+          // Skip single characters and pure punctuation (-, —, ·, etc.)
+          if (word.length <= 1 || /^[\p{P}\p{S}]+$/u.test(word)) continue;
+          // Found first real non-date word — highlight it
+          const idx = displayText.indexOf(word, displayText.length - trimmed.length);
+          highlightIndex = idx >= 0 ? idx : displayText.lastIndexOf(trimmed) + wm.index;
+          highlightLength = word.length;
+          break;
+        }
+
+        // Skip the full date match (1 or 2 words)
+        if (twoMatch && twoMatch.index === 0 && twoMatch[0].length === twoWords.length) {
+          // advance wordRe past the second word too
+          wordRe.lastIndex = wm.index + twoWords.length;
+        }
       }
 
       return {
@@ -1115,11 +1216,11 @@
     };
   }
 
-  function renderTextWithHighlight(containerEl, text, hiIndex, hiLen) {
+  function renderTextWithHighlight(containerEl, text, hiIndex, hiLen, noteId) {
     containerEl.textContent = '';
 
     if (hiIndex < 0 || hiLen <= 0) {
-      containerEl.textContent = text;
+      appendTextWithLinks(containerEl, text, noteId);
       return;
     }
 
@@ -1127,14 +1228,427 @@
     const word = text.slice(hiIndex, hiIndex + hiLen);
     const after = text.slice(hiIndex + hiLen);
 
-    if (before) containerEl.appendChild(document.createTextNode(before));
+    if (before) appendTextWithLinks(containerEl, before, noteId);
 
     const pill = document.createElement('span');
     pill.className = 'task-pill';
     pill.textContent = word;
     containerEl.appendChild(pill);
 
-    if (after) containerEl.appendChild(document.createTextNode(after));
+    if (after) appendTextWithLinks(containerEl, after, noteId);
+  }
+
+  // ======================
+  // LINK CHIP RENDERING
+  // ======================
+
+  const URL_RE = /https?:\/\/[^\s<>"']+/g;
+
+  function extractDomain(url) {
+    try {
+      return new URL(url).hostname.replace(/^www\./, '');
+    } catch (_) {
+      return url;
+    }
+  }
+
+  function truncateUrl(url, maxLen = 30) {
+    const domain = extractDomain(url);
+    try {
+      const u = new URL(url);
+      const path = (u.pathname + u.search).replace(/\/$/, '');
+      if (!path || path === '/') return domain;
+      const full = domain + path;
+      return full.length > maxLen ? full.slice(0, maxLen) + '…' : full;
+    } catch (_) {
+      return domain;
+    }
+  }
+
+  function buildLinkChip(url) {
+    const chip = document.createElement('a');
+    chip.className = 'link-chip';
+    chip.href = url;
+    chip.target = '_blank';
+    chip.rel = 'noopener noreferrer';
+    chip.setAttribute('data-link-chip', '');
+
+    const favicon = document.createElement('img');
+    favicon.className = 'link-chip-favicon';
+    const domain = extractDomain(url);
+    favicon.src = `https://icon.horse/icon/${domain}`;
+    favicon.width = 14;
+    favicon.height = 14;
+    favicon.alt = '';
+    favicon.onerror = () => { favicon.style.display = 'none'; };
+
+    const label = document.createElement('span');
+    label.className = 'link-chip-label';
+    label.textContent = truncateUrl(url);
+
+    chip.appendChild(favicon);
+    chip.appendChild(label);
+    return chip;
+  }
+
+  // ======================
+  // DATE CHIP RENDERING
+  // ======================
+
+  const UA_MONTHS = {
+    'січня':0,'лютого':1,'березня':2,'квітня':3,'травня':4,'червня':5,
+    'липня':6,'серпня':7,'вересня':8,'жовтня':9,'листопада':10,'грудня':11,
+    'січень':0,'лютий':1,'березень':2,'квітень':3,'травень':4,'червень':5,
+    'липень':6,'серпень':7,'вересень':8,'жовтень':9,'листопад':10,'грудень':11,
+  };
+  const EN_MONTHS = {
+    'january':0,'february':1,'march':2,'april':3,'may':4,'june':5,
+    'july':6,'august':7,'september':8,'october':9,'november':10,'december':11,
+    'jan':0,'feb':1,'mar':2,'apr':3,'jun':5,'jul':6,'aug':7,'sep':8,'oct':9,'nov':10,'dec':11,
+  };
+
+  // Returns Monday of the current week (weekday 0=Mon..6=Sun)
+  function getMonday(d) {
+    const day = d.getDay(); // 0=Sun
+    const diff = (day === 0 ? -6 : 1 - day);
+    const m = new Date(d);
+    m.setDate(d.getDate() + diff);
+    m.setHours(0,0,0,0);
+    return m;
+  }
+
+  function dateFromWeekday(name) {
+    const map = {
+      'понеділок':0,'вівторок':1,'середа':2,'середу':2,'четвер':3,
+      "п'ятниця":4,"п'ятницю":4,'субота':5,'суботу':5,'неділя':6,'неділю':6,
+      'monday':0,'tuesday':1,'wednesday':2,'thursday':3,'friday':4,'saturday':5,'sunday':6,
+      'mon':0,'tue':1,'wed':2,'thu':3,'fri':4,'sat':5,'sun':6,
+    };
+    const idx = map[name.toLowerCase()];
+    if (idx === undefined) return null;
+    const today = new Date(); today.setHours(0,0,0,0);
+    const monday = getMonday(today);
+    const candidate = new Date(monday);
+    candidate.setDate(monday.getDate() + idx);
+    // if that day already passed this week → next week
+    if (candidate < today) candidate.setDate(candidate.getDate() + 7);
+    return candidate;
+  }
+
+  function resolveRelativeDate(token) {
+    const t = token.toLowerCase();
+    const today = new Date(); today.setHours(0,0,0,0);
+    if (t === 'сьогодні' || t === 'today')       { return new Date(today); }
+    if (t === 'завтра'   || t === 'tomorrow')     { const d = new Date(today); d.setDate(d.getDate()+1); return d; }
+    if (t === 'вчора'    || t === 'yesterday')    { const d = new Date(today); d.setDate(d.getDate()-1); return d; }
+    if (t === 'післязавтра' || t === 'day after tomorrow') { const d = new Date(today); d.setDate(d.getDate()+2); return d; }
+    return null;
+  }
+
+  function fmtDateTooltip(d) {
+    return d.toLocaleDateString('uk-UA', { day:'numeric', month:'long', year:'numeric', weekday:'long' });
+  }
+
+  // Big combined regex for all date patterns (applied per-line)
+  // Groups: (1) relative, (2) weekday-ua (with preposition), (3) weekday-en, (4) DD.MM.YYYY, (5) DD.MM, (6) DD month-ua [YYYY], (7) DD month-en [YYYY]
+  const DATE_RE = new RegExp(
+    // 1. relative words
+    '(сьогодні|завтра|вчора|післязавтра|today|tomorrow|yesterday|day after tomorrow)' +
+    // 2. ua weekdays with optional prepositions "в/у"
+    '|(?:(?:в|у)\\s+)(понеділок|вівторок|середу|середа|четвер|п\'ятницю|п\'ятниця|суботу|субота|неділю|неділя)' +
+    // 3. en weekdays (standalone)
+    '|\\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tue|wed|thu|fri|sat|sun)\\b' +
+    // 4. DD.MM.YYYY
+    '|\\b(\\d{1,2}\\.\\d{1,2}\\.\\d{4})\\b' +
+    // 5. DD.MM (no year)
+    '|\\b(\\d{1,2}\\.\\d{1,2})\\b' +
+    // 6. DD month-ua [YYYY]
+    '|(\\d{1,2})\\s+(січня|лютого|березня|квітня|травня|червня|липня|серпня|вересня|жовтня|листопада|грудня|січень|лютий|березень|квітень|травень|червень|липень|серпень|вересень|жовтень|листопад|грудень)(?:\\s+(\\d{4}))?' +
+    // 7. DD month-en [YYYY]
+    '|(\\d{1,2})\\s+(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|oct|nov|dec)(?:\\s+(\\d{4}))?',
+    'gi'
+  );
+
+  function parseDateFromMatch(m) {
+    // m[1] relative
+    if (m[1]) return resolveRelativeDate(m[1]);
+    // m[2] ua weekday
+    if (m[2]) return dateFromWeekday(m[2]);
+    // m[3] en weekday
+    if (m[3]) return dateFromWeekday(m[3]);
+    // m[4] DD.MM.YYYY
+    if (m[4]) {
+      const [dd,mm,yyyy] = m[4].split('.').map(Number);
+      const d = new Date(yyyy, mm-1, dd);
+      return isNaN(d) ? null : d;
+    }
+    // m[5] DD.MM
+    if (m[5]) {
+      const [dd,mm] = m[5].split('.').map(Number);
+      const now = new Date();
+      let year = now.getFullYear();
+      const d = new Date(year, mm-1, dd);
+      if (d < now) d.setFullYear(year+1);
+      return isNaN(d) ? null : d;
+    }
+    // m[6]+m[7] ua month, m[8] optional year
+    if (m[6] && m[7]) {
+      const dd = parseInt(m[6]);
+      const mo = UA_MONTHS[m[7].toLowerCase()];
+      const yr = m[8] ? parseInt(m[8]) : new Date().getFullYear();
+      if (mo === undefined) return null;
+      return new Date(yr, mo, dd);
+    }
+    // m[9]+m[10] en month, m[11] optional year
+    if (m[9] && m[10]) {
+      const dd = parseInt(m[9]);
+      const mo = EN_MONTHS[m[10].toLowerCase()];
+      const yr = m[11] ? parseInt(m[11]) : new Date().getFullYear();
+      if (mo === undefined) return null;
+      return new Date(yr, mo, dd);
+    }
+    return null;
+  }
+
+  function buildDateChip(rawText, date, showTooltip = true) {
+    const chip = document.createElement('span');
+    chip.className = 'date-chip';
+    chip.setAttribute('data-date-chip', '');
+    if (showTooltip) chip.title = fmtDateTooltip(date);
+    chip.textContent = rawText;
+    return chip;
+  }
+
+  // Collects date + URL tokens only (no collapse)
+  function _collectBaseTokens(line) {
+    const tokens = [];
+
+    // dates
+    DATE_RE.lastIndex = 0;
+    let m;
+    while ((m = DATE_RE.exec(line)) !== null) {
+      const date = parseDateFromMatch(m);
+      if (!date) continue;
+      // show tooltip only for non-numeric formats (relative, weekday, text month)
+      const isNumeric = !!(m[4] || m[5]); // DD.MM.YYYY or DD.MM
+      tokens.push({ start: m.index, end: m.index + m[0].length, type: 'date', raw: m[0], date, showTooltip: !isNumeric });
+    }
+
+    // urls (skip if inside already-captured date range)
+    URL_RE.lastIndex = 0;
+    while ((m = URL_RE.exec(line)) !== null) {
+      const start = m.index, end = start + m[0].length;
+      const overlap = tokens.some(t => start < t.end && end > t.start);
+      if (!overlap) tokens.push({ start, end, type: 'url', raw: m[0] });
+    }
+
+    tokens.sort((a, b) => a.start - b.start);
+    return tokens;
+  }
+
+  // (defined fully in INLINE COLLAPSE section below, which adds noteId support)
+
+  // ======================
+  // INLINE COLLAPSE
+  // ======================
+
+  const COLLAPSE_STATES_KEY = 'collapse_states_v1';
+  // Map of "noteId:charIndex" → true(expanded)/false(collapsed)
+  const collapseStates = (() => {
+    try { return new Map(Object.entries(JSON.parse(localStorage.getItem(COLLAPSE_STATES_KEY) || '{}'))) ; }
+    catch (_) { return new Map(); }
+  })();
+
+  function saveCollapseStates() {
+    try { localStorage.setItem(COLLAPSE_STATES_KEY, JSON.stringify(Object.fromEntries(collapseStates))); }
+    catch (_) {}
+  }
+
+  // Regex to find {{text}} tokens in a string
+  const COLLAPSE_RE = /\{\{(.+?)\}\}/gs;
+
+  // Parse all collapse tokens in a line, returns array of {start, end, text}
+  function findCollapseTokens(line) {
+    const tokens = [];
+    COLLAPSE_RE.lastIndex = 0;
+    let m;
+    while ((m = COLLAPSE_RE.exec(line)) !== null) {
+      tokens.push({ start: m.index, end: m.index + m[0].length, text: m[1] });
+    }
+    return tokens;
+  }
+
+  // Build a collapse chip element
+  function buildCollapseChip(innerText, stateKey) {
+    const isExpanded = collapseStates.get(stateKey) === true;
+
+    const chip = document.createElement('span');
+    chip.className = 'collapse-chip' + (isExpanded ? ' is-expanded' : '');
+    chip.setAttribute('data-collapse-chip', '');
+    chip.setAttribute('data-collapse-key', stateKey);
+
+    const arrow = document.createElement('span');
+    arrow.className = 'collapse-chip-arrow';
+
+    const preview = document.createElement('span');
+    preview.className = 'collapse-chip-preview';
+    // Show first ~30 chars as preview label
+    const previewText = innerText.length > 32 ? innerText.slice(0, 30) + '…' : innerText;
+    preview.textContent = previewText;
+
+    const full = document.createElement('span');
+    full.className = 'collapse-chip-full';
+    full.textContent = innerText;
+
+    chip.appendChild(arrow);
+    chip.appendChild(preview);
+    chip.appendChild(full);
+
+    chip.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const expanded = chip.classList.toggle('is-expanded');
+      collapseStates.set(stateKey, expanded);
+      saveCollapseStates();
+    });
+
+    return chip;
+  }
+
+  // Extended collectLineTokens that also includes collapse tokens
+  function collectLineTokens(line, noteIdForCollapse) {
+    const tokens = _collectBaseTokens(line);
+
+    // Add collapse tokens (avoid overlaps)
+    for (const ct of findCollapseTokens(line)) {
+      const overlap = tokens.some(t => ct.start < t.end && ct.end > t.start);
+      if (!overlap) {
+        tokens.push({ start: ct.start, end: ct.end, type: 'collapse', raw: line.slice(ct.start, ct.end), collapseText: ct.text, noteId: noteIdForCollapse });
+      }
+    }
+    tokens.sort((a, b) => a.start - b.start);
+    return tokens;
+  }
+
+  function appendTextWithLinks(containerEl, text, noteId) {
+    if (!text) return;
+
+    // 1. Find all collapse tokens across the FULL text (before line-split),
+    //    because {{...}} content can span newlines.
+    const collapseTokens = [];
+    COLLAPSE_RE.lastIndex = 0;
+    let cm;
+    while ((cm = COLLAPSE_RE.exec(text)) !== null) {
+      collapseTokens.push({ start: cm.index, end: cm.index + cm[0].length, text: cm[1] });
+    }
+
+    // 2. Build segments: plain-text ranges and collapse chips, in order.
+    //    Plain-text segments are rendered line-by-line (with <br>).
+    //    Collapse chips are rendered as a single inline element.
+    let cursor = 0;
+    let collapseCount = 0;
+
+    function appendPlain(chunk) {
+      if (!chunk) return;
+      const lines = chunk.split('\n');
+      lines.forEach((line, i) => {
+        if (i > 0) containerEl.appendChild(document.createElement('br'));
+        // within each plain line, render date+url chips
+        const tokens = _collectBaseTokens(line);
+        let li = 0;
+        for (const tok of tokens) {
+          if (tok.start > li) containerEl.appendChild(document.createTextNode(line.slice(li, tok.start)));
+          if (tok.type === 'url') containerEl.appendChild(buildLinkChip(tok.raw));
+          else containerEl.appendChild(buildDateChip(tok.raw, tok.date, tok.showTooltip));
+          li = tok.end;
+        }
+        if (li < line.length) containerEl.appendChild(document.createTextNode(line.slice(li)));
+      });
+    }
+
+    for (const ct of collapseTokens) {
+      // plain text before this collapse token
+      appendPlain(text.slice(cursor, ct.start));
+      // collapse chip
+      const stateKey = noteId ? `${noteId}:${ct.start}` : `anon:${ct.start}:${collapseCount++}`;
+      containerEl.appendChild(buildCollapseChip(ct.text, stateKey));
+      cursor = ct.end;
+    }
+    // remaining plain text after last collapse token
+    appendPlain(text.slice(cursor));
+  }
+
+  function renderTextWithLinks(containerEl, text, noteId) {
+    containerEl.textContent = '';
+    appendTextWithLinks(containerEl, text, noteId);
+  }
+
+  // ======================
+  // COLLAPSE TOOLBAR (floating above composer)
+  // ======================
+
+  const collapseToolbar = document.getElementById('collapse-toolbar');
+  const collapseToolbarBtn = document.getElementById('collapse-toolbar-btn');
+
+  let _toolbarHideTimer = null;
+
+  function showCollapseToolbar() {
+    if (!collapseToolbar) return;
+    clearTimeout(_toolbarHideTimer);
+    collapseToolbar.classList.add('is-visible');
+    collapseToolbar.setAttribute('aria-hidden', 'false');
+  }
+
+  function hideCollapseToolbar() {
+    if (!collapseToolbar) return;
+    _toolbarHideTimer = setTimeout(() => {
+      collapseToolbar.classList.remove('is-visible');
+      collapseToolbar.setAttribute('aria-hidden', 'true');
+    }, 120);
+  }
+
+  function handleCollapseSelection() {
+    if (!noteInput) return;
+    const { selectionStart, selectionEnd } = noteInput;
+    const hasSelection = selectionEnd > selectionStart + 1;
+    if (hasSelection) {
+      showCollapseToolbar();
+    } else {
+      hideCollapseToolbar();
+    }
+  }
+
+  if (noteInput) {
+    noteInput.addEventListener('select', handleCollapseSelection);
+    noteInput.addEventListener('mouseup', handleCollapseSelection);
+    noteInput.addEventListener('keyup', (e) => {
+      if (e.shiftKey) handleCollapseSelection();
+      else hideCollapseToolbar();
+    });
+    noteInput.addEventListener('blur', () => hideCollapseToolbar());
+  }
+
+  if (collapseToolbarBtn) {
+    collapseToolbarBtn.addEventListener('mousedown', (e) => {
+      // prevent textarea from losing selection on click
+      e.preventDefault();
+    });
+    collapseToolbarBtn.addEventListener('click', () => {
+      if (!noteInput) return;
+      const { selectionStart, selectionEnd, value } = noteInput;
+      if (selectionEnd <= selectionStart) return;
+
+      const selected = value.slice(selectionStart, selectionEnd);
+      // Wrap selected text in {{}}
+      const newValue = value.slice(0, selectionStart) + '{{' + selected + '}}' + value.slice(selectionEnd);
+      noteInput.value = newValue;
+      // Place cursor after the closing }}
+      const newPos = selectionStart + selected.length + 4;
+      noteInput.setSelectionRange(newPos, newPos);
+      noteInput.dispatchEvent(new Event('input', { bubbles: true }));
+      hideCollapseToolbar();
+      noteInput.focus();
+    });
   }
 
   // ======================
@@ -1293,6 +1807,12 @@
         alert('Failed to delete note: ' + error.message);
         return;
       }
+
+      currentNotes = currentNotes.filter(n => String(n.id) !== String(noteId));
+      selectedNoteIds.delete(noteId);
+      movedNoteIds.delete(String(noteId));
+      persistMovedIds();
+      clearTaskCompletedAt(noteId);
 
       const removeAfter = reduceMotion ? 0 : 190;
       window.setTimeout(() => {
@@ -1761,7 +2281,7 @@
   function isRowActionTarget(target) {
     if (!target) return false;
     return !!target.closest(
-      '.note-del, .task-check, .answer-wrap, .answer-input, .answer-save, [data-answer-save], [data-answer-input], [data-answer-wrap], .multi-check, .note-moved, .related-link, .thread-ear, .thread-quick-add, .thread-add-btn'
+      '.note-del, .task-check, .answer-wrap, .answer-input, .answer-save, [data-answer-save], [data-answer-input], [data-answer-wrap], .multi-check, .note-moved, .related-link, .thread-ear, .thread-quick-add, .thread-add-btn, [data-link-chip], [data-date-chip], [data-collapse-chip]'
     );
   }
 
@@ -2287,7 +2807,7 @@
         const src = taskInfo.isTask
           ? taskInfo
           : { displayText: item.text ?? '', highlightIndex: -1, highlightLength: 0 };
-        renderTextWithHighlight(content, src.displayText ?? (item.text ?? ''), src.highlightIndex, src.highlightLength);
+        renderTextWithHighlight(content, src.displayText ?? (item.text ?? ''), src.highlightIndex, src.highlightLength, item.id);
 
         wrap.appendChild(cb);
         wrap.appendChild(content);
@@ -2311,7 +2831,7 @@
           renderThreadSheetFeed(changed.note, changed.payload);
         });
       } else {
-        noteTextEl.textContent = item.text ?? '';
+        renderTextWithLinks(noteTextEl, item.text ?? '', item.id);
       }
 
       row.addEventListener('dblclick', (e) => {
@@ -2690,14 +3210,17 @@
   }
 
   function renderCurrentView({ preserveScroll = false } = {}) {
-    if (viewMode === 'organized') {
-      if (!activeFolderType) renderOrganizedFolders();
-      else renderFolderFeed();
-      updateMultiActionState();
-      return;
-    }
-
-    renderNotes(currentNotes, { preserveScroll, allowMultiSelect: true, mountEl: notesContainer });
+    const displayNotes = applyFiltersAndSort(currentNotes);
+    // when sorting by due or oldest, disable day-separator grouping
+    const flatList = filterSort === 'due' || filterSort === 'oldest';
+    renderNotes(displayNotes, {
+      preserveScroll,
+      allowMultiSelect: true,
+      mountEl: notesContainer,
+      sortByDateAsc: false, // already sorted by applyFiltersAndSort
+      flatList,
+    });
+    updateMultiActionState();
   }
 
   function renderNotes(
@@ -2708,13 +3231,15 @@
       mountEl = notesContainer,
       scrollEl = mountEl,
       scrollToBottom = true,
-      sortByDateAsc = false
+      sortByDateAsc = false,
+      flatList = false,
     } = {}
   ) {
     const prevScrollTop = scrollEl.scrollTop;
     const canUseMulti = allowMultiSelect && viewMode === 'feed' && !activeFolderType;
     // Sort notes: by day, then within day by position (if any set) or chronological
-    const displayNotes = notes.slice().sort((a, b) => {
+    // (skip internal sort if flatList=true — already sorted by applyFiltersAndSort)
+    const displayNotes = flatList ? notes.slice() : notes.slice().sort((a, b) => {
       const da = dayKey(a.date);
       const db = dayKey(b.date);
       if (da !== db) return da.localeCompare(db);
@@ -2735,6 +3260,7 @@
     });
 
     const existingIds = new Set(displayNotes.map((note) => note.id));
+
     if (openedThreadNoteId && !existingIds.has(openedThreadNoteId)) {
       closeThreadSheet();
     }
@@ -2785,7 +3311,7 @@
     displayNotes.forEach((n, nIdx) => {
       const curDay = dayKey(n.date);
 
-      if (curDay !== prevDay) {
+      if (!flatList && curDay !== prevDay) {
         const sep = document.createElement('div');
         sep.className = 'day-sep';
         sep.innerHTML = `
@@ -3136,7 +3662,7 @@
           ? taskInfo
           : { displayText: n.text ?? '', highlightIndex: -1, highlightLength: 0 };
 
-        renderTextWithHighlight(content, src.displayText ?? (n.text ?? ''), src.highlightIndex, src.highlightLength);
+        renderTextWithHighlight(content, src.displayText ?? (n.text ?? ''), src.highlightIndex, src.highlightLength, n.id);
 
         wrap.appendChild(cb);
         wrap.appendChild(content);
@@ -3164,7 +3690,7 @@
           }
         });
       } else {
-        noteTextEl.textContent = n.text ?? '';
+        renderTextWithLinks(noteTextEl, n.text ?? '', n.id);
       }
 
       // === Related note link ===
@@ -3399,12 +3925,48 @@
   }
 
   // ==========
+  // DUE DATE
+  // ==========
+
+  // Extract first date found in note text → ISO string or null
+  function extractDueDate(text) {
+    if (!text) return null;
+    DATE_RE.lastIndex = 0;
+    const m = DATE_RE.exec(text);
+    if (!m) return null;
+    const d = parseDateFromMatch(m);
+    if (!d || isNaN(d)) return null;
+    return d.toISOString();
+  }
+
+  // Backfill due_date for notes that have a date in text but null due_date.
+  // Runs silently in background after load.
+  async function backfillDueDates(notes) {
+    const toUpdate = notes.filter(n => {
+      if (n.due_date) return false; // already set
+      if (isReviewMarkerNote(n)) return false;
+      return !!extractDueDate(n.text);
+    });
+    if (!toUpdate.length) return;
+
+    // batch updates — run in parallel, max 10 at a time
+    const BATCH = 10;
+    for (let i = 0; i < toUpdate.length; i += BATCH) {
+      const batch = toUpdate.slice(i, i + BATCH);
+      await Promise.all(batch.map(n => {
+        const due_date = extractDueDate(n.text);
+        return sb.from('notes').update({ due_date }).eq('id', n.id).eq('user_id', user.id);
+      }));
+    }
+  }
+
+  // ==========
   // LOAD
   // ==========
   async function loadNotes() {
     const { data, error } = await sb
       .from('notes')
-      .select('id, text, date, is_task, completed, is_question, answer, position')
+      .select('id, text, date, is_task, completed, is_question, answer, position, due_date')
       .eq('user_id', user.id)
       .order('date', { ascending: true });
 
@@ -3415,6 +3977,9 @@
 
     const rawNotes = data || [];
     keywordCache.clear();
+
+    // backfill due_date for existing notes silently in background
+    backfillDueDates(rawNotes).catch(() => {});
 
     // clean up stale movedNoteIds (deleted notes)
     const noteIdSet = new Set(rawNotes.map(n => String(n.id)));
@@ -3465,7 +4030,8 @@
       const patch = {
         text,
         is_task: nextIsTask,
-        is_question: nextIsQuestion
+        is_question: nextIsQuestion,
+        due_date: extractDueDate(text)
       };
 
       // if it stopped being a task — reset completed
@@ -3508,7 +4074,8 @@
         is_task: nextIsTask,
         completed: false,
         is_question: nextIsQuestion,
-        answer: null
+        answer: null,
+        due_date: extractDueDate(text)
       })
       .select('id')
       .single();
@@ -3568,10 +4135,57 @@
     await deleteSelectedNotes();
   });
 
-  viewFeedBtn?.addEventListener('click', () => setViewMode('feed'));
-  viewOrganizedBtn?.addEventListener('click', () => setViewMode('organized'));
+  viewFeedBtn?.addEventListener('click', () => {
+    if (filterPanelOpen) { toggleFilterPanel(); return; }
+    setViewMode('feed');
+  });
+
+  const viewFilterBtn = document.getElementById('viewFilterBtn');
+  viewFilterBtn?.addEventListener('click', () => toggleFilterPanel());
+
   viewPlanningBtn?.addEventListener('click', () => {
     alert('Planning will be added in the next update.');
+  });
+
+  // ─── Filter panel chip handlers ───
+  document.getElementById('filter-type-chips')?.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-filter-type]');
+    if (!btn) return;
+    filterType = btn.dataset.filterType;
+    btn.closest('.filter-chips').querySelectorAll('.filter-chip').forEach(b => b.classList.toggle('is-active', b === btn));
+    // show/hide status section
+    const statusSection = document.getElementById('filter-status-section');
+    if (statusSection) statusSection.style.display = filterType === 'task' ? '' : 'none';
+    if (filterType !== 'task') { filterStatus = 'all'; document.querySelectorAll('[data-filter-status]').forEach(b => b.classList.toggle('is-active', b.dataset.filterStatus === 'all')); }
+    updateViewModeUi();
+    renderCurrentView();
+  });
+
+  document.getElementById('filter-status-chips')?.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-filter-status]');
+    if (!btn) return;
+    filterStatus = btn.dataset.filterStatus;
+    btn.closest('.filter-chips').querySelectorAll('.filter-chip').forEach(b => b.classList.toggle('is-active', b === btn));
+    updateViewModeUi();
+    renderCurrentView();
+  });
+
+  document.getElementById('filter-due-chips')?.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-filter-due]');
+    if (!btn) return;
+    filterDue = btn.dataset.filterDue;
+    btn.closest('.filter-chips').querySelectorAll('.filter-chip').forEach(b => b.classList.toggle('is-active', b === btn));
+    updateViewModeUi();
+    renderCurrentView();
+  });
+
+  document.getElementById('filter-sort-chips')?.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-filter-sort]');
+    if (!btn) return;
+    filterSort = btn.dataset.filterSort;
+    btn.closest('.filter-chips').querySelectorAll('.filter-chip').forEach(b => b.classList.toggle('is-active', b === btn));
+    updateViewModeUi();
+    renderCurrentView();
   });
 
   // ─── Info button (quick tips popover) ───

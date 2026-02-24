@@ -26,10 +26,11 @@
               <circle cx="4" cy="17" r="1"></circle>
             </svg>
           </button>
-          <button id="viewOrganizedBtn" type="button" class="top-nav-btn" data-view-mode="organized" aria-label="Folders" role="tab" aria-selected="false">
+          <button id="viewFilterBtn" type="button" class="top-nav-btn" aria-label="Filter &amp; Sort" role="tab" aria-selected="false">
             <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v1H3V7z"></path>
-              <path d="M3 10h18l-1.2 8a2 2 0 0 1-2 2H6.2a2 2 0 0 1-2-2L3 10z"></path>
+              <line x1="4" y1="6" x2="20" y2="6"></line>
+              <line x1="7" y1="12" x2="17" y2="12"></line>
+              <line x1="10" y1="18" x2="14" y2="18"></line>
             </svg>
           </button>
           <button id="viewPlanningBtn" type="button" class="top-nav-btn" data-view-mode="planning" aria-label="Planning" role="tab" aria-selected="false">
@@ -63,6 +64,45 @@
       </div>
     </header>
 
+    <div id="filter-panel" class="filter-panel" aria-hidden="true">
+      <div class="filter-section">
+        <div class="filter-label">Тип</div>
+        <div class="filter-chips" id="filter-type-chips">
+          <button class="filter-chip is-active" data-filter-type="all">Всі</button>
+          <button class="filter-chip" data-filter-type="note">Нотатки</button>
+          <button class="filter-chip" data-filter-type="task">Задачі</button>
+          <button class="filter-chip" data-filter-type="question">Питання</button>
+          <button class="filter-chip" data-filter-type="thread">Треди</button>
+        </div>
+      </div>
+      <div class="filter-section" id="filter-status-section" style="display:none">
+        <div class="filter-label">Статус</div>
+        <div class="filter-chips" id="filter-status-chips">
+          <button class="filter-chip is-active" data-filter-status="all">Всі</button>
+          <button class="filter-chip" data-filter-status="active">Активні</button>
+          <button class="filter-chip" data-filter-status="done">Виконані</button>
+        </div>
+      </div>
+      <div class="filter-section">
+        <div class="filter-label">Дедлайн</div>
+        <div class="filter-chips" id="filter-due-chips">
+          <button class="filter-chip is-active" data-filter-due="all">Будь-який</button>
+          <button class="filter-chip" data-filter-due="today">Сьогодні</button>
+          <button class="filter-chip" data-filter-due="week">Цей тиждень</button>
+          <button class="filter-chip" data-filter-due="overdue">Прострочені</button>
+          <button class="filter-chip" data-filter-due="has">Є дедлайн</button>
+        </div>
+      </div>
+      <div class="filter-section">
+        <div class="filter-label">Сортування</div>
+        <div class="filter-chips" id="filter-sort-chips">
+          <button class="filter-chip is-active" data-filter-sort="newest">Нові спочатку</button>
+          <button class="filter-chip" data-filter-sort="oldest">Старі спочатку</button>
+          <button class="filter-chip" data-filter-sort="due">За дедлайном</button>
+        </div>
+      </div>
+    </div>
+
     <div id="notes-container" class="flex-1 overflow-y-auto px-6 py-4"></div>
 
     <div id="multi-action-bar" class="multi-action-bar" aria-hidden="true">
@@ -75,6 +115,13 @@
           </button>
         </div>
       </div>
+    </div>
+
+    <div id="collapse-toolbar" class="collapse-toolbar" aria-hidden="true">
+      <button id="collapse-toolbar-btn" class="collapse-toolbar-btn" type="button">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="7 15 12 20 17 15"/><polyline points="7 9 12 4 17 9"/></svg>
+        Згорнути
+      </button>
     </div>
 
     <div id="composer" class="composer-wrap p-4 border-t border-gray-100">
