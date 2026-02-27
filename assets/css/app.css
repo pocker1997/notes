@@ -1894,8 +1894,8 @@ body.public-thread .thread-sheet-head-main{
    =========================== */
 
 .task-line{
-  display: inline-flex;
-  align-items: center;
+  display: flex;
+  align-items: flex-start;
   gap: 8px;
 }
 
@@ -1903,6 +1903,8 @@ body.public-thread .thread-sheet-head-main{
 .task-check{
   width: 20px;
   height: 20px;
+  flex-shrink: 0;
+  margin-top: 4px;
   border-radius: 5px;
 
   border: 1px solid #e5e7eb;
